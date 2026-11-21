@@ -1,4 +1,5 @@
 import React from 'react';
+import { X, Printer } from 'lucide-react';
 
 export default function BillPrint({ order, onClose }) {
   const handlePrint = () => {
@@ -19,7 +20,7 @@ export default function BillPrint({ order, onClose }) {
             onClick={onClose} 
             className="w-8 h-8 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center cursor-pointer shadow-sm"
           >
-            <span className="material-symbols-outlined text-[18px]">close</span>
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -29,7 +30,7 @@ export default function BillPrint({ order, onClose }) {
           <div className="border border-slate-200 p-6 bg-slate-50/20 rounded-xl space-y-4 font-mono text-xs text-slate-800 shadow-inner select-text">
             {/* Header */}
             <div className="text-center border-b border-dashed border-slate-300 pb-4">
-              <h3 className="font-black text-sm tracking-tight uppercase text-slate-900">Stitch Digital Menu</h3>
+         
               <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-1">{order.tableName} CHECK</p>
               <p className="text-[10px] text-slate-400 mt-1">Invoice: {order.orderNumber}</p>
               <p className="text-[9px] text-slate-400 mt-0.5">Date: {new Date(order.createdAt).toLocaleString()}</p>
@@ -42,14 +43,28 @@ export default function BillPrint({ order, onClose }) {
                 <span className="font-bold text-slate-800">{order.tableName}</span>
               </div>
               <div className="flex justify-between">
-                <span>Created Via:</span>
+                <span>Source:</span>
                 <span className="font-bold text-slate-800 capitalize">{order.placedBy || 'customer'}</span>
               </div>
-              {order.waiterId && (
+
+              {order.placedBy === 'waiter' ? (
                 <div className="flex justify-between">
-                  <span>Server ID:</span>
-                  <span className="font-bold text-slate-800">{String(order.waiterId).slice(-4)}</span>
+                  <span>Server / Waiter:</span>
+                  <span className="font-bold text-slate-800">{order.waiterId?.name || 'Staff Waiter'}</span>
                 </div>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span>Customer:</span>
+                    <span className="font-bold text-slate-800">{order.customerId?.name || 'Guest Diner'}</span>
+                  </div>
+                  {order.customerId?.mobile && (
+                    <div className="flex justify-between">
+                      <span>Mobile Contact:</span>
+                      <span className="font-bold text-slate-800 font-mono">{order.customerId.mobile}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -94,7 +109,7 @@ export default function BillPrint({ order, onClose }) {
             {/* Footer */}
             <div className="text-center pt-3 text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
               <p>Thank you for dining with us!</p>
-              <p className="mt-0.5">Powered by Stitch digital menu</p>
+            
             </div>
           </div>
         </div>
@@ -111,7 +126,7 @@ export default function BillPrint({ order, onClose }) {
             onClick={handlePrint}
             className="flex-1 h-11 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow cursor-pointer inline-flex items-center justify-center gap-1.5"
           >
-            <span className="material-symbols-outlined text-[18px]">print</span>
+            <Printer className="w-4 h-4" />
             Print Receipt
           </button>
         </div>

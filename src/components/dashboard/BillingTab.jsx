@@ -1,457 +1,351 @@
-import React from 'react';
-
-const dict = {
-  en: {
-    desk: "Counter Billing Desk",
-    desc: "Verify diner balances, manage active checks, and print thermal receipts.",
-    refresh: "Refresh Desk",
-    settled: "Settled Today",
-    orders: "orders",
-    revenue: "Daily Net Revenue",
-    average: "Average Ticket Value",
-    search: "Search table or order #...",
-    filter: "Filter Table:",
-    allTables: "All Tables/Rooms",
-    activeCheck: "Active Check Settlements",
-    activeDesc: "Click \"Settle\" to complete the billing flow and clear table occupancy.",
-    activeTables: "Active Tables",
-    noActive: "No active orders requiring billing.",
-    noActiveDesc: "Active customer checkout requests will show up here automatically.",
-    tableCol: "Table / Room",
-    itemsCol: "Item Details",
-    sourceCol: "Source",
-    statusCol: "Billing Status",
-    paymentCol: "Payment",
-    dueCol: "Balance Due",
-    actionCol: "Actions",
-    print: "Print",
-    settle: "Settle",
-    history: "Billing Order History Log",
-    historyDesc: "Search and audit completed or in-progress invoices.",
-    allLog: "All Log",
-    new: "New",
-    inKitchen: "In Kitchen",
-    readyServed: "Ready/Served",
-    completed: "Settled",
-    cancelled: "Cancelled",
-    today: "Today's",
-    older: "Older",
-    dateTimeCol: "Date & Time",
-    itemsSumCol: "Items Summary",
-    receiptCol: "Receipt",
-    noHistory: "No matching history orders found in this log category.",
-    unpaid: "Unpaid",
-    paid: "Paid"
-  },
-  hi: {
-    desk: "काउंटर बिलिंग डेस्क",
-    desc: "ग्राहकों के बिल की जांच करें, सक्रिय आर्डर्स का प्रबंधन करें, और थर्मल रसीदें प्रिंट करें।",
-    refresh: "डेस्क रीफ्रेश करें",
-    settled: "आज निपटाए गए",
-    orders: "ऑर्डर",
-    revenue: "दैनिक शुद्ध राजस्व",
-    average: "औसत टिकट मूल्य",
-    search: "टेबल या ऑर्डर नंबर खोजें...",
-    filter: "टेबल फ़िल्टर:",
-    allTables: "सभी टेबल/कमरे",
-    activeCheck: "सक्रिय चेक निपटान",
-    activeDesc: "बिलिंग प्रक्रिया पूरी करने और टेबल खाली करने के लिए \"निपटाएं\" पर क्लिक करें।",
-    activeTables: "सक्रिय टेबल्स",
-    noActive: "बिलिंग के लिए कोई सक्रिय ऑर्डर नहीं है।",
-    noActiveDesc: "सक्रिय ग्राहकों के चेकआउट अनुरोध यहां स्वचालित रूप से दिखाई देंगे।",
-    tableCol: "टेबल / कमरा",
-    itemsCol: "आइटम विवरण",
-    sourceCol: "स्रोत",
-    statusCol: "बिलिंग स्थिति",
-    paymentCol: "भुगतान",
-    dueCol: "बकाया राशि",
-    actionCol: "कार्रवाई",
-    print: "प्रिंट",
-    settle: "निपटाएं",
-    history: "बिलिंग ऑर्डर इतिहास लॉग",
-    historyDesc: "पूरे हो चुके या चल रहे इनवॉइस खोजें और जांचें।",
-    allLog: "सभी लॉग",
-    new: "नया",
-    inKitchen: "रसोई में",
-    readyServed: "तैयार/परोसा गया",
-    completed: "निपटाया गया",
-    cancelled: "रद्द",
-    today: "आज का",
-    older: "पुराना",
-    dateTimeCol: "दिनांक और समय",
-    itemsSumCol: "आइटम सारांश",
-    receiptCol: "रसीद",
-    noHistory: "इस श्रेणी में कोई मिलान ऑर्डर इतिहास नहीं मिला।",
-    unpaid: "बकाया",
-    paid: "भुगतान किया"
-  }
-};
+import React, { useState } from 'react';
+import { api } from '../../api';
+import {
+  Search, RefreshCw, Printer, Check, X,
+  User, AlertCircle, Banknote, CreditCard, QrCode,
+  Pencil, Trash2, UtensilsCrossed, Minus, Plus, Tag,
+  SlidersHorizontal, Maximize2, ChefHat
+} from 'lucide-react';
 
 export default function BillingTab({
-  billingOrders,
-  historyOrders,
-  billingSummary,
-  tables,
-  orderSearch,
-  setOrderSearch,
-  billingTableFilter,
-  setBillingTableFilter,
-  historyTab,
-  setHistoryTab,
-  handleOpenPrintBilling,
-  handleSettleBillingOrder,
-  fetchTabData,
-  tabLoading,
-  lang = 'en'
+  billingOrders, historyOrders, billingSummary, tables,
+  orderSearch, setOrderSearch, billingTableFilter, setBillingTableFilter,
+  historyTab, setHistoryTab, handleOpenPrintBilling,
+  handleSettleBillingOrder, handleUpdatePaymentStatus, fetchTabData, tabLoading,
 }) {
-  const t = dict[lang] || dict.en;
+  const [settlingOrder, setSettlingOrder] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [editedItems, setEditedItems] = useState([]);
+  const [discountVal, setDiscountVal] = useState(0);
+  const [adjustmentVal, setAdjustmentVal] = useState(0);
+
+  React.useEffect(() => {
+    if (editingOrder) {
+      setEditedItems(editingOrder.items.map(it => ({ ...it })));
+      setDiscountVal(editingOrder.discount || 0);
+      setAdjustmentVal(editingOrder.adjustment || 0);
+    }
+  }, [editingOrder]);
 
   const filteredActiveOrders = billingOrders.filter(o => {
-    const matchesSearch = o.tableName.toLowerCase().includes(orderSearch.toLowerCase()) || (o.orderNumber && o.orderNumber.toLowerCase().includes(orderSearch.toLowerCase()));
+    const q = orderSearch.toLowerCase();
+    const matchesSearch =
+      o.tableName.toLowerCase().includes(q) ||
+      (o.orderNumber && o.orderNumber.toLowerCase().includes(q)) ||
+      (o.customerId?.name && o.customerId.name.toLowerCase().includes(q)) ||
+      (o.customerId?.mobile && o.customerId.mobile.includes(q));
     const matchesTable = billingTableFilter ? o.tableName === billingTableFilter : true;
     return matchesSearch && matchesTable;
   });
 
+  const billRequestedCount = filteredActiveOrders.filter(o => o.billRequested).length;
+
+  const handleSettleConfirm = async () => {
+    if (!settlingOrder) return;
+    try {
+      if (handleUpdatePaymentStatus) await handleUpdatePaymentStatus(settlingOrder._id, 'Paid');
+      await handleSettleBillingOrder(settlingOrder._id);
+      setSettlingOrder(null);
+    } catch (err) {
+      alert('Error settling: ' + err.message);
+    }
+  };
+
+  if (tabLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-800" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 animate-fadeIn text-xs text-left">
-      {tabLoading ? (
-        <div className="text-center py-20">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#003b1b] mx-auto"></div>
+    <div className="space-y-4 text-left animate-fadeIn">
+
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap gap-2.5 items-center justify-between bg-white border border-slate-200 px-3.5 py-3 rounded-2xl shadow-sm">
+        <div className="flex flex-wrap gap-2 items-center flex-1">
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl w-60">
+            <Search className="w-4 h-4 text-slate-500 shrink-0" />
+            <input
+              type="text"
+              className="bg-transparent border-none outline-none w-full text-xs font-semibold text-slate-800 placeholder-slate-400"
+              placeholder="Search table or order..."
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+            />
+          </div>
+          <select
+            className="h-9 px-3 border border-slate-200 rounded-xl bg-white text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b]"
+            value={billingTableFilter}
+            onChange={(e) => setBillingTableFilter(e.target.value)}
+          >
+            <option value="">All Tables</option>
+            {tables.map(t => <option key={t._id} value={t.name}>{t.name}</option>)}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {billRequestedCount > 0 && (
+            <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs font-bold shadow-xs">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+              {billRequestedCount} Bill Req
+            </span>
+          )}
+          <span className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-700 rounded-full text-xs font-bold">
+            {filteredActiveOrders.length} Active
+          </span>
+          <button
+            onClick={() => fetchTabData('billing')}
+            className="h-9 px-3 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors bg-white shadow-xs"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+          <button
+            onClick={() => { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }}
+            className="h-9 w-9 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center cursor-pointer transition-colors bg-white shadow-xs"
+            title="Toggle Fullscreen"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Cards Grid ── */}
+      {filteredActiveOrders.length === 0 ? (
+        <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl shadow-sm">
+          <UtensilsCrossed className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="font-bold text-slate-700 text-base">No active billing orders</p>
+          <p className="text-slate-500 font-medium text-xs mt-1">Bill requests will appear here automatically.</p>
         </div>
       ) : (
-        <>
-          <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 font-sans">{t.desk}</h1>
-              <p className="text-xs text-slate-400 mt-1">{t.desc}</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => fetchTabData('billing')}
-                className="bg-white border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+          {filteredActiveOrders.map((ord) => {
+            const billRequested = ord.billRequested;
+            const totalItems = ord.items.reduce((s, i) => s + i.quantity, 0);
+            return (
+              <div
+                key={ord._id}
+                className={`bg-white rounded-2xl border flex flex-col transition-all shadow-xs hover:shadow-md ${
+                  billRequested
+                    ? 'border-amber-300 ring-2 ring-amber-200/60'
+                    : 'border-slate-200/90'
+                }`}
               >
-                <span className="material-symbols-outlined text-[16px]">refresh</span>
-                {t.refresh}
-              </button>
-            </div>
-          </header>
-
-          {/* Sales Stats overview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{t.settled}</p>
-                <h3 className="text-xl font-black text-slate-900 mt-1">{billingSummary.count} {t.orders}</h3>
-              </div>
-              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
-                <span className="material-symbols-outlined text-xl">check_circle</span>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{t.revenue}</p>
-                <h3 className="text-xl font-black text-slate-900 mt-1">₹{billingSummary.revenue.toLocaleString()}</h3>
-              </div>
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                <span className="material-symbols-outlined text-xl">payments</span>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{t.average}</p>
-                <h3 className="text-xl font-black text-slate-900 mt-1">₹{billingSummary.averageValue}</h3>
-              </div>
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                <span className="material-symbols-outlined text-xl">analytics</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Controls/Filters row */}
-          <div className="flex flex-col sm:flex-row gap-3 sm:items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm text-xs">
-            <div className="flex items-center bg-slate-50 px-3 py-1.5 rounded-md border border-slate-200 w-full sm:w-64">
-              <span className="material-symbols-outlined text-slate-400 text-[18px] mr-2">search</span>
-              <input
-                type="text"
-                className="bg-transparent border-none outline-none focus:ring-0 w-full text-xs"
-                placeholder={t.search}
-                value={orderSearch}
-                onChange={(e) => setOrderSearch(e.target.value)}
-              />
-            </div>
-            
-            {/* Table wise Filter dropdown */}
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 font-bold shrink-0">{t.filter}</span>
-              <select
-                className="h-8 px-2 border border-slate-200 rounded-md bg-white outline-none focus:ring-1 focus:ring-[#003b1b]"
-                value={billingTableFilter}
-                onChange={(e) => setBillingTableFilter(e.target.value)}
-              >
-                <option value="">{t.allTables}</option>
-                {tables.map(tOption => (
-                  <option key={tOption._id} value={tOption.name}>{tOption.name} ({tOption.type})</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Active Settlement Queue */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div>
-                <h2 className="font-extrabold text-sm text-slate-800">{t.activeCheck}</h2>
-                <p className="text-[11px] text-slate-400 mt-0.5 font-medium">{t.activeDesc}</p>
-              </div>
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-[10px] font-black uppercase tracking-wider">
-                {filteredActiveOrders.length} {t.activeTables}
-              </span>
-            </div>
-
-            {filteredActiveOrders.length === 0 ? (
-              <div className="text-center py-12 px-6">
-                <div className="w-10 h-10 bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center rounded-xl mx-auto mb-3">
-                  <span className="material-symbols-outlined text-xl">payments</span>
-                </div>
-                <h3 className="font-bold text-slate-700 text-xs">{t.noActive}</h3>
-                <p className="text-slate-400 text-[10px] mt-1">{t.noActiveDesc}</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <tr>
-                      <th className="p-3 pl-4">{t.tableCol}</th>
-                      <th className="p-3">{t.itemsCol}</th>
-                      <th className="p-3">{t.sourceCol}</th>
-                      <th className="p-3">{t.statusCol}</th>
-                      <th className="p-3">{t.paymentCol}</th>
-                      <th className="p-3">{t.dueCol}</th>
-                      <th className="p-3 pr-4 text-right">{t.actionCol}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {filteredActiveOrders.map((ord) => (
-                      <tr
-                        key={ord._id}
-                        className={`hover:bg-slate-50/50 transition-colors ${
-                          ord.billRequested ? 'bg-amber-50/60 hover:bg-amber-100/40 border-l-4 border-l-amber-500' : ''
-                        }`}
-                      >
-                        <td className="p-3 pl-4">
-                          <span className="font-extrabold text-slate-800 block text-sm">{ord.tableName}</span>
-                          <span className="text-[10px] text-slate-400 block font-semibold mt-0.5">{ord.orderNumber}</span>
-                        </td>
-                        <td className="p-3 min-w-[220px]">
-                          <div className="space-y-1 max-h-16 overflow-y-auto pr-2 font-mono">
-                            {ord.items.map((it, i) => (
-                              <div key={i} className="text-slate-600 flex justify-between gap-4 text-[11px]">
-                                <span>
-                                  {it.name} {it.variantName ? <strong className="text-emerald-600">({it.variantName})</strong> : null} <strong className="text-slate-400">x{it.quantity}</strong>
-                                </span>
-                                <span className="text-slate-500 font-bold">₹{it.price * it.quantity}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-1.5 py-0.25 rounded text-[8px] font-black uppercase tracking-wider ${
-                            ord.placedBy === 'waiter'
-                              ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                          }`}>
-                            {ord.placedBy || 'customer'}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {ord.billRequested ? (
-                            <span className="flex items-center gap-1.5 text-amber-600 font-black animate-pulse uppercase tracking-wider text-[10px]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                              Bill Requested!
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 inline-flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                              {ord.status}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                            ord.paymentStatus === 'Paid'
-                              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                              : 'bg-red-50 text-red-500 border border-red-200'
-                          }`}>
-                            {ord.paymentStatus === 'Paid' ? t.paid : t.unpaid}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="font-extrabold text-sm text-slate-900">₹{ord.totalAmount}</span>
-                          <span className="text-[10px] text-slate-400 block font-semibold mt-0.5">
-                            GST Included
-                          </span>
-                        </td>
-                        <td className="p-3 pr-4 text-right space-x-2 shrink-0">
-                          <button
-                            onClick={() => handleOpenPrintBilling(ord)}
-                            className="px-2.5 py-1 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg bg-white shadow-sm inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">print</span>
-                            {t.print}
-                          </button>
-                          <button
-                            onClick={() => handleSettleBillingOrder(ord._id)}
-                            className="px-2.5 py-1 bg-[#003b1b] hover:bg-[#166534] text-white font-bold rounded-lg shadow inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">check</span>
-                            {t.settle}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Order History Panel */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/30 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="font-extrabold text-sm text-slate-800">{t.history}</h2>
-                <p className="text-[11px] text-slate-400 mt-0.5 font-medium">{t.historyDesc}</p>
-              </div>
-              {/* History categories filters */}
-              <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg text-[9px] font-bold self-start">
-                {[
-                  { id: 'all', label: t.allLog },
-                  { id: 'new', label: t.new },
-                  { id: 'processing', label: t.inKitchen },
-                  { id: 'ready', label: t.readyServed },
-                  { id: 'completed', label: t.completed },
-                  { id: 'cancelled', label: t.cancelled },
-                  { id: 'today', label: t.today },
-                  { id: 'old', label: t.older }
-                ].map(subTab => (
-                  <button
-                    key={subTab.id}
-                    onClick={() => setHistoryTab(subTab.id)}
-                    className={`px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
-                      historyTab === subTab.id
-                        ? 'bg-[#003b1b] text-white'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    {subTab.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Filter history items */}
-            {(() => {
-              const filteredHistory = historyOrders.filter(o => {
-                const matchesSearch = o.tableName.toLowerCase().includes(orderSearch.toLowerCase()) || (o.orderNumber && o.orderNumber.toLowerCase().includes(orderSearch.toLowerCase()));
-                const matchesTable = billingTableFilter ? o.tableName === billingTableFilter : true;
-                
-                let matchesTab = true;
-                if (historyTab === 'new') {
-                  matchesTab = o.status === 'New';
-                } else if (historyTab === 'processing') {
-                  matchesTab = o.status === 'Accepted' || o.status === 'Preparing';
-                } else if (historyTab === 'ready') {
-                  matchesTab = o.status === 'Ready' || o.status === 'Served';
-                } else if (historyTab === 'completed') {
-                  matchesTab = o.status === 'Completed';
-                } else if (historyTab === 'cancelled') {
-                  matchesTab = o.status === 'Cancelled';
-                } else if (historyTab === 'today') {
-                  matchesTab = new Date(o.createdAt).toDateString() === new Date().toDateString();
-                } else if (historyTab === 'old') {
-                  matchesTab = new Date(o.createdAt).toDateString() !== new Date().toDateString();
-                }
-                
-                return matchesSearch && matchesTable && matchesTab;
-              });
-
-              if (filteredHistory.length === 0) {
-                return (
-                  <div className="text-center py-12 px-6">
-                    <p className="text-slate-400 text-xs">{t.noHistory}</p>
+                {/* ── Card Top Bar ── */}
+                <div className={`flex items-center justify-between px-3.5 py-2.5 rounded-t-2xl border-b ${
+                  billRequested ? 'bg-amber-50/80 border-amber-200' : 'bg-slate-50 border-slate-200/80'
+                }`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-extrabold text-slate-900 text-sm truncate">{ord.tableName}</span>
+                    {ord.placedBy === 'waiter' && (
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black rounded uppercase shrink-0">Waiter</span>
+                    )}
                   </div>
-                );
-              }
-
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
-                      <tr>
-                        <th className="p-3 pl-4">{t.tableCol}</th>
-                        <th className="p-3">{t.dateTimeCol}</th>
-                        <th className="p-3">{t.itemsSumCol}</th>
-                        <th className="p-3">{t.statusCol}</th>
-                        <th className="p-3">{t.paymentCol}</th>
-                        <th className="p-3">{t.dueCol}</th>
-                        <th className="p-3 pr-4 text-right">{t.receiptCol}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {filteredHistory.map((ord) => (
-                        <tr key={ord._id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-3 pl-4 font-bold text-slate-800">
-                            <span>{ord.tableName}</span>
-                            <span className="text-[10px] text-slate-400 block font-semibold mt-0.5">{ord.orderNumber}</span>
-                          </td>
-                          <td className="p-3 text-slate-500 text-[10px]">
-                            {new Date(ord.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                          </td>
-                          <td className="p-3 max-w-xs truncate text-[10px] text-slate-500">
-                            {ord.items.map(i => `${i.name}${i.variantName ? ` (${i.variantName})` : ''} (x${i.quantity})`).join(', ')}
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
-                              ord.status === 'New' ? 'bg-amber-100 text-amber-600' :
-                              ord.status === 'Accepted' ? 'bg-blue-100 text-blue-600' :
-                              ord.status === 'Preparing' ? 'bg-indigo-100 text-indigo-600' :
-                              ord.status === 'Ready' ? 'bg-emerald-100 text-emerald-600' :
-                              ord.status === 'Completed' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-600'
-                            }`}>
-                              {ord.status}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
-                              ord.paymentStatus === 'Paid'
-                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                : 'bg-red-50 text-red-500 border border-red-200'
-                            }`}>
-                              {ord.paymentStatus === 'Paid' ? t.paid : t.unpaid}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold text-slate-900">
-                            ₹{ord.totalAmount}
-                          </td>
-                          <td className="p-3 pr-4 text-right">
-                            <button
-                              onClick={() => handleOpenPrintBilling(ord)}
-                              className="h-7 w-7 rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500 cursor-pointer shadow-sm ml-auto"
-                              title="Print Receipt"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">print</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {billRequested ? (
+                    <span className="flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                      <AlertCircle className="w-3 h-3 text-amber-700" /> Bill Req
+                    </span>
+                  ) : (
+                    <span className="bg-slate-100 text-slate-800 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">{ord.status}</span>
+                  )}
                 </div>
-              );
-            })()}
-          </div>
-        </>
+
+                {/* ── Card Body ── */}
+                <div className="px-3.5 py-2.5 flex-1 flex flex-col gap-2.5">
+
+                  {/* Order # + Customer inline */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-600 font-extrabold font-mono">{ord.orderNumber}</span>
+                    <span className="text-xs text-slate-700 font-semibold truncate max-w-[130px]">
+                      {ord.customerId ? `👤 ${ord.customerId.name || 'Guest'}` : '👤 Anonymous'}
+                    </span>
+                  </div>
+
+                  {/* Items list — compact */}
+                  <div className="bg-slate-50 rounded-xl border border-slate-200/80 divide-y divide-slate-100 max-h-32 overflow-y-auto">
+                    {ord.items.map((it, idx) => (
+                      <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 text-xs">
+                        <span className="text-slate-800 font-bold truncate max-w-[55%]">
+                          {it.name}
+                          {it.variantName && <span className="text-amber-600 ml-1 text-[10px]">({it.variantName})</span>}
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-slate-500 font-bold">×{it.quantity}</span>
+                          <span className="font-extrabold text-slate-900">₹{it.price * it.quantity}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Special instructions */}
+                  {ord.specialInstructions && (
+                    <div className="bg-amber-50 border border-amber-200/80 rounded-xl px-2.5 py-1.5 text-xs text-amber-800 italic font-medium">
+                      📝 {ord.specialInstructions}
+                    </div>
+                  )}
+
+                  {/* Total + items count */}
+                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                    <span className="text-xs text-slate-500 font-bold">{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
+                    <span className="font-black text-base text-slate-950">₹{ord.totalAmount}</span>
+                  </div>
+                </div>
+
+                {/* ── Card Actions ── */}
+                <div className="px-3.5 pb-3.5 flex gap-2">
+                  <button
+                    onClick={() => handleOpenPrintBilling(ord)}
+                    className="h-8 flex-1 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print
+                  </button>
+                  <button
+                    onClick={() => setEditingOrder(ord)}
+                    className="h-8 flex-1 rounded-xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Edit
+                  </button>
+                  <button
+                    onClick={() => setSettlingOrder(ord)}
+                    className="h-8 flex-1 rounded-xl bg-[#003b1b] hover:bg-[#166534] text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Settle
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
+
+      {/* ── SETTLE DIALOG ── */}
+      {settlingOrder && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl p-5 relative text-left flex flex-col">
+            <button onClick={() => setSettlingOrder(null)} className="absolute right-4 top-4 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="mb-4">
+              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-semibold uppercase px-2 py-0.5 rounded-full">Settle Invoice</span>
+              <h2 className="text-base font-bold text-slate-800 mt-2">Checkout — {settlingOrder.tableName}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{settlingOrder.orderNumber} · Due: <span className="text-slate-800 font-semibold">₹{settlingOrder.totalAmount}</span></p>
+            </div>
+
+            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-2">Payment Method</p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {[{ id: 'Cash', label: 'Cash', icon: Banknote }, { id: 'UPI', label: 'UPI / QR', icon: QrCode }, { id: 'Card', label: 'Card', icon: CreditCard }].map(({ id, label, icon: Icon }) => (
+                <button key={id} type="button" onClick={() => setPaymentMethod(id)}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all cursor-pointer ${paymentMethod === id ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                  <Icon className="w-4 h-4" />
+                  <span className="text-[10px] font-medium">{label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5 text-xs mb-4">
+              <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{settlingOrder.subtotal || Math.round(settlingOrder.totalAmount / 1.05)}</span></div>
+              <div className="flex justify-between text-slate-500 border-b border-slate-200 pb-1.5"><span>Tax (5% GST)</span><span>₹{settlingOrder.taxAmount || Math.round(settlingOrder.totalAmount - settlingOrder.totalAmount / 1.05)}</span></div>
+              <div className="flex justify-between text-slate-900 font-bold pt-0.5"><span>Total</span><span className="text-base">₹{settlingOrder.totalAmount}</span></div>
+            </div>
+
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setSettlingOrder(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs cursor-pointer">Cancel</button>
+              <button type="button" onClick={handleSettleConfirm} className="flex-1 py-2.5 bg-[#003b1b] hover:bg-[#166534] text-white font-semibold rounded-xl text-xs cursor-pointer">Confirm Settlement</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT BILL DIALOG ── */}
+      {editingOrder && (() => {
+        const subtotal = editedItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
+        const afterDiscount = Math.max(0, subtotal - Number(discountVal || 0));
+        const afterAdjustment = Math.max(0, afterDiscount + Number(adjustmentVal || 0));
+        const taxAmount = Math.round(afterAdjustment * 0.05);
+        const totalAmount = afterAdjustment + taxAmount;
+
+        const handleSaveBillEdits = async () => {
+          if (editedItems.length === 0) { alert('Bill must have at least 1 item.'); return; }
+          try {
+            await api.orders.updateOrder(editingOrder._id, { items: editedItems, subtotal, taxAmount, totalAmount });
+            fetchTabData('billing');
+            setEditingOrder(null);
+          } catch (err) { alert('Failed to save: ' + err.message); }
+        };
+
+        const updateQty = (idx, delta) => {
+          const next = [...editedItems];
+          const newQty = next[idx].quantity + delta;
+          if (newQty <= 0) next.splice(idx, 1); else next[idx].quantity = newQty;
+          setEditedItems(next);
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md shadow-2xl p-5 relative text-left flex flex-col max-h-[90vh]">
+              <button onClick={() => setEditingOrder(null)} className="absolute right-4 top-4 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="mb-4">
+                <span className="bg-indigo-50 text-indigo-600 border border-indigo-200 text-[9px] font-semibold uppercase px-2 py-0.5 rounded-full">Edit Bill</span>
+                <h2 className="text-base font-bold text-slate-800 mt-2">Modify — {editingOrder.tableName}</h2>
+                <p className="text-xs text-slate-400 mt-0.5">{editingOrder.orderNumber}</p>
+              </div>
+
+              <div className="flex-1 overflow-y-auto mb-4 divide-y divide-slate-100 max-h-52 border border-slate-100 rounded-xl">
+                {editedItems.map((it, idx) => (
+                  <div key={idx} className="flex justify-between items-center px-3 py-2 text-xs">
+                    <div className="max-w-[40%]">
+                      <span className="font-medium text-slate-700 block truncate">{it.name}</span>
+                      {it.variantName && <span className="text-[9px] text-orange-500">{it.variantName}</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                        <button type="button" onClick={() => updateQty(idx, -1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer"><Minus className="w-3 h-3" /></button>
+                        <span className="px-2 font-semibold text-slate-800 text-[11px]">{it.quantity}</span>
+                        <button type="button" onClick={() => updateQty(idx, 1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer"><Plus className="w-3 h-3" /></button>
+                      </div>
+                      <span className="font-semibold text-slate-800 w-14 text-right">₹{it.price * it.quantity}</span>
+                      <button type="button" onClick={() => { const n = [...editedItems]; n.splice(idx, 1); setEditedItems(n); }} className="text-rose-400 hover:text-rose-600 cursor-pointer p-1">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 flex items-center gap-1 mb-1"><Tag className="w-3 h-3" /> Discount (₹)</label>
+                  <input type="number" min="0" value={discountVal} onChange={(e) => setDiscountVal(Math.max(0, Number(e.target.value)))} className="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none" placeholder="0" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 mb-1 block">Adjustment (₹)</label>
+                  <input type="number" value={adjustmentVal} onChange={(e) => setAdjustmentVal(Number(e.target.value))} className="w-full h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none" placeholder="0" />
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5 text-xs mb-4">
+                <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{subtotal}</span></div>
+                {Number(discountVal) > 0 && <div className="flex justify-between text-rose-500 font-medium"><span>Discount</span><span>-₹{discountVal}</span></div>}
+                {Number(adjustmentVal) !== 0 && <div className="flex justify-between text-indigo-500 font-medium"><span>Adjustment</span><span>{Number(adjustmentVal) > 0 ? '+' : ''}₹{adjustmentVal}</span></div>}
+                <div className="flex justify-between text-slate-500"><span>Tax (5% GST)</span><span>₹{taxAmount}</span></div>
+                <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1.5"><span>New Total</span><span className="text-base">₹{totalAmount}</span></div>
+              </div>
+
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEditingOrder(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs cursor-pointer">Cancel</button>
+                <button type="button" onClick={handleSaveBillEdits} className="flex-1 py-2.5 bg-[#003b1b] hover:bg-[#166534] text-white font-semibold rounded-xl text-xs cursor-pointer">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

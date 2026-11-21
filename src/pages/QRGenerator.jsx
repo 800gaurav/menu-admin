@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { api } from '../api';
+import { ArrowLeft, Download, QrCode, LayoutTemplate, AlignJustify } from 'lucide-react';
 
 export default function QRGenerator() {
   const navigate = useNavigate();
@@ -62,15 +63,29 @@ export default function QRGenerator() {
     // 1. Resolve Target URL
     const targetUrl = selectedTable.targetUrl || `http://localhost:5173/menu/${restaurant.slug}?table=${encodeURIComponent(selectedTable.name)}`;
 
+    const drawRoundedRect = (c, x, y, width, height, radius) => {
+      c.beginPath();
+      c.moveTo(x + radius, y);
+      c.lineTo(x + width - radius, y);
+      c.quadraticCurveTo(x + width, y, x + width, y + radius);
+      c.lineTo(x + width, y + height - radius);
+      c.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+      c.lineTo(x + radius, y + height);
+      c.quadraticCurveTo(x, y + height, x, y + height - radius);
+      c.lineTo(x, y + radius);
+      c.quadraticCurveTo(x, y, x + radius, y);
+      c.closePath();
+    };
+
     try {
       // 2. Generate raw QR code image in memory (using high error correction for framing)
       const qrDataUrl = await QRCode.toDataURL(targetUrl, {
         errorCorrectionLevel: 'H',
         margin: 1,
-        width: 300,
+        width: 320,
         color: {
           dark: fgColor,
-          light: bgColor
+          light: '#ffffff'
         }
       });
 
@@ -90,92 +105,173 @@ export default function QRGenerator() {
           ctx.drawImage(qrImg, 10, 10, 300, 300);
         }
         else if (template === 'tent') {
-          // Tent Card Template (Portrait Stand)
-          canvas.width = 380;
-          canvas.height = 540;
+          // Tent Card / Portrait Standee Template (PhonePe / Paytm style)
+          canvas.width = 400;
+          canvas.height = 600;
           
-          // Background
-          ctx.fillStyle = bgColor;
+          // Background Color (Soft neutral grey/slate background)
+          ctx.fillStyle = '#f8fafc';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           
-          // Outer Border with Accent color
+          // Outer Border
           ctx.strokeStyle = accentColor;
-          ctx.lineWidth = 12;
-          ctx.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
+          ctx.lineWidth = 14;
+          ctx.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
           
-          // Header Accent Block
-          ctx.fillStyle = accentColor;
-          ctx.fillRect(12, 12, canvas.width - 24, 80);
-          
-          // Header Text
+          // Top Header Header Block (Deep rich gradient)
+          const grad = ctx.createLinearGradient(14, 14, canvas.width - 24, 140);
+          grad.addColorStop(0, accentColor);
+          grad.addColorStop(1, '#0f172a');
+          ctx.fillStyle = grad;
+          ctx.fillRect(14, 14, canvas.width - 28, 146);
+
+          // Top Header Tagline/Brand Text
           ctx.fillStyle = '#ffffff';
-          ctx.font = '900 22px system-ui, -apple-system, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(label.toUpperCase(), canvas.width / 2, 60);
-
-          // Draw QR Image
-          ctx.drawImage(qrImg, 40, 115, 300, 300);
-
-          // Subtitle / Call to action
-          ctx.fillStyle = '#64748b';
-          ctx.font = 'bold 13px system-ui, -apple-system, sans-serif';
-          ctx.fillText('Order & Pay Directly From Your Phone', canvas.width / 2, 445);
-
-          // Footer Accent bar
-          ctx.fillStyle = accentColor;
-          ctx.fillRect(12, 475, canvas.width - 24, 53);
-
-          // Table Number footer text
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '900 18px system-ui, -apple-system, sans-serif';
-          ctx.fillText(`${footerLabel.toUpperCase()}: ${selectedTable.name.toUpperCase()}`, canvas.width / 2, 510);
-        }
-        else if (template === 'banner') {
-          // Banner / Landscape Table Stand Template
-          canvas.width = 600;
-          canvas.height = 380;
-
-          // Background
-          ctx.fillStyle = bgColor;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          // Border
-          ctx.strokeStyle = accentColor;
-          ctx.lineWidth = 10;
-          ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
-
-          // Left Text Panel
-          ctx.fillStyle = accentColor;
-          ctx.font = '900 28px system-ui, -apple-system, sans-serif';
-          ctx.textAlign = 'left';
-          ctx.fillText(restaurant?.name?.toUpperCase() || 'STITCH CAFE', 40, 75);
-
-          ctx.fillStyle = '#334155';
           ctx.font = '900 24px system-ui, -apple-system, sans-serif';
-          ctx.fillText(label.toUpperCase(), 40, 130);
+          ctx.fillText(restaurant?.name?.toUpperCase() || 'STITCH CAFE', canvas.width / 2, 70);
 
-          ctx.fillStyle = '#64748b';
-          ctx.font = '500 13px system-ui, -apple-system, sans-serif';
-          ctx.fillText('1. Scan the QR Code', 40, 185);
-          ctx.fillText('2. Select dishes from menu', 40, 215);
-          ctx.fillText('3. Place order & enjoy!', 40, 245);
+          ctx.fillStyle = '#f1f5f9';
+          ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
+          // ctx.fillText((restaurant?.phone || restaurant?.email || 'SCAN TO ORDER ONLINE').toUpperCase(), canvas.width / 2, 105);
 
-          // Left Footer Badge (Table Number)
-          ctx.fillStyle = accentColor;
-          ctx.fillRect(40, 290, 220, 50);
+          // Draw a soft separator line
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(40, 120);
+          ctx.lineTo(canvas.width - 40, 120);
+          ctx.stroke();
+
+          // Main QR White Card Container (with soft shadow)
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
+          ctx.shadowBlur = 15;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 8;
 
           ctx.fillStyle = '#ffffff';
-          ctx.font = '900 16px system-ui, -apple-system, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${footerLabel.toUpperCase()}: ${selectedTable.name.toUpperCase()}`, 150, 322);
+          drawRoundedRect(ctx, 35, 140, 330, 390, 24);
+          ctx.fill();
 
-          // Right Panel QR Code
+          // Disable shadow for inner drawings
+          ctx.shadowColor = 'transparent';
+
+          // Table / Node Pill badge above QR
+          ctx.fillStyle = accentColor;
+          drawRoundedRect(ctx, 110, 165, 180, 42, 12);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'center';
-          ctx.drawImage(qrImg, 320, 40, 240, 240);
+          ctx.font = '900 14px system-ui, -apple-system, sans-serif';
+          ctx.fillText(`${footerLabel.toUpperCase()}: ${selectedTable.name.toUpperCase()}`, canvas.width / 2, 191);
+
+          // Draw the QR Code image inside the card
+          ctx.drawImage(qrImg, 75, 225, 250, 250);
+
+          // Instruction Text below QR
+          ctx.fillStyle = '#475569';
+          ctx.textAlign = 'center';
+          ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
+          ctx.fillText(label.toUpperCase(), canvas.width / 2, 502);
+
+          // Bottom Bar details
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
+          ctx.fillText('NO APP REQUIRED • SCAN TO BROWSE & PAY', canvas.width / 2, 555);
 
           ctx.fillStyle = '#94a3b8';
-          ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
-          ctx.fillText('POWERED BY STITCH MENU', 440, 305);
+          ctx.font = '900 10px system-ui, -apple-system, sans-serif';
+     
+        }
+        else if (template === 'banner') {
+          // Banner / Landscape POS Standee Template
+          canvas.width = 640;
+          canvas.height = 400;
+
+          // Background
+          ctx.fillStyle = '#f8fafc';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Outer Border
+          ctx.strokeStyle = accentColor;
+          ctx.lineWidth = 14;
+          ctx.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
+
+          // Left Rounded Card Panel (Info panel)
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.05)';
+          ctx.shadowBlur = 10;
+          drawRoundedRect(ctx, 30, 30, 310, 340, 20);
+          ctx.fill();
+          ctx.shadowColor = 'transparent';
+
+          // Left Panel Header
+          ctx.fillStyle = accentColor;
+          ctx.font = '900 22px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(restaurant?.name?.toUpperCase() || 'STITCH CAFE', 55, 80);
+
+          // Line separator
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(55, 105);
+          ctx.lineTo(315, 105);
+          ctx.stroke();
+
+          // Left Panel Instructions
+          ctx.fillStyle = '#1e293b';
+          ctx.font = '900 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText('EASY TO ORDER:', 55, 135);
+
+          ctx.fillStyle = '#475569';
+          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('1. Open your phone camera or QR scanner', 55, 175);
+          ctx.fillText('2. Scan the code to view the live menu', 55, 205);
+          ctx.fillText('3. Add your favorite dishes to basket', 55, 235);
+          ctx.fillText('4. Confirm order, chef begins cooking!', 55, 265);
+
+          // Table badge inside Left panel
+          ctx.fillStyle = accentColor;
+          drawRoundedRect(ctx, 55, 300, 260, 46, 12);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '900 14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${footerLabel.toUpperCase()} - ${selectedTable.name.toUpperCase()}`, 185, 329);
+
+          // Right Rounded Card Panel (QR panel)
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.05)';
+          ctx.shadowBlur = 10;
+          drawRoundedRect(ctx, 365, 30, 245, 340, 20);
+          ctx.fill();
+          ctx.shadowColor = 'transparent';
+
+          // Border for QR card
+          ctx.strokeStyle = accentColor;
+          ctx.lineWidth = 3;
+          drawRoundedRect(ctx, 365, 30, 245, 340, 20);
+          ctx.stroke();
+
+          // QR Code Image
+          ctx.drawImage(qrImg, 382, 50, 210, 210);
+
+          // Scanner calls
+          ctx.fillStyle = '#1e293b';
+          ctx.textAlign = 'center';
+          ctx.font = '900 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText(label.toUpperCase(), 488, 295);
+
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Scan with Camera / No App Required', 488, 320);
+
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
+          ctx.fillText('POWERED BY STITCH MENU', 488, 345);
         }
       };
     } catch (err) {
@@ -193,139 +289,149 @@ export default function QRGenerator() {
     link.click();
   };
 
+  const TEMPLATES = [
+    { id: 'minimal', label: 'Minimal', icon: QrCode },
+    { id: 'tent',    label: 'Tent Card', icon: LayoutTemplate },
+    { id: 'banner',  label: 'Table Stand', icon: AlignJustify },
+  ];
+
   return (
     <div className="min-h-screen bg-[#f7f9fb] text-[#191c1e] font-sans flex flex-col md:flex-row text-left">
-      {/* Settings Panel Left */}
-      <aside className="w-full md:w-[380px] bg-white border-r border-slate-200 p-6 flex flex-col justify-between overflow-y-auto">
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center gap-3 border-b border-slate-100 pb-5">
-            <button 
-              onClick={() => navigate('/admin')} 
-              className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
-            </button>
-            <div>
-              <h1 className="font-extrabold text-sm text-slate-800">QR Design Studio</h1>
-              <p className="text-[10px] text-slate-400 font-semibold tracking-wide uppercase">Advanced Canvas Composite</p>
-            </div>
+
+      {/* ── Settings Panel ── */}
+      <aside className="w-full md:w-[340px] bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+          <button
+            onClick={() => navigate('/admin')}
+            className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 cursor-pointer transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div>
+            <h1 className="font-bold text-sm text-slate-800">QR Design Studio</h1>
+            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Canvas Generator</p>
           </div>
-
-          {loading ? (
-            <p className="text-xs text-slate-400 font-bold">Synchronizing studio...</p>
-          ) : (
-            <div className="space-y-4 text-xs">
-              {/* Target Table */}
-              <div>
-                <label className="block text-slate-500 font-bold mb-1.5 uppercase">Select Target Location</label>
-                <select 
-                  className="w-full h-10 px-3 border border-slate-200 rounded-lg outline-none bg-white font-semibold"
-                  value={selectedTable?._id || ''}
-                  onChange={(e) => setSelectedTable(tables.find(t => t._id === e.target.value))}
-                >
-                  {tables.map(t => <option key={t._id} value={t._id}>{t.name} ({t.type})</option>)}
-                </select>
-              </div>
-
-              {/* Template Style */}
-              <div>
-                <label className="block text-slate-500 font-bold mb-1.5 uppercase">Frame Layout Template</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'minimal', label: 'Minimal', icon: 'qr_code' },
-                    { id: 'tent', label: 'Tent Card', icon: 'splitscreen' },
-                    { id: 'banner', label: 'Table Stand', icon: 'view_agenda' }
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setTemplate(t.id)}
-                      className={`py-2 px-1 border rounded-lg font-bold flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors ${
-                        template === t.id 
-                          ? 'border-[#003b1b] bg-[#003b1b]/5 text-[#003b1b]' 
-                          : 'border-slate-200 hover:bg-slate-50 text-slate-600'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-lg">{t.icon}</span>
-                      <span className="text-[9px]">{t.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom Labels (if not minimal) */}
-              {template !== 'minimal' && (
-                <>
-                  <div>
-                    <label className="block text-slate-500 font-bold mb-1.5 uppercase">Header Text Callout</label>
-                    <input 
-                      type="text" 
-                      className="w-full h-10 px-3 border border-slate-200 rounded-lg outline-none font-semibold focus:ring-1 focus:ring-[#003b1b]"
-                      value={label}
-                      onChange={(e) => setLabel(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-500 font-bold mb-1.5 uppercase">Footer Prefix Label</label>
-                    <input 
-                      type="text" 
-                      className="w-full h-10 px-3 border border-slate-200 rounded-lg outline-none font-semibold focus:ring-1 focus:ring-[#003b1b]"
-                      value={footerLabel}
-                      onChange={(e) => setFooterLabel(e.target.value)}
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* Color Accents */}
-              <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
-                <div>
-                  <label className="block text-slate-500 font-bold mb-1 uppercase">Branding Color</label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} className="w-8 h-8 rounded border border-slate-200 cursor-pointer p-0.5" />
-                    <span className="font-mono text-[9px] uppercase">{accentColor}</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-slate-500 font-bold mb-1 uppercase">QR Dots Color</label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="w-8 h-8 rounded border border-slate-200 cursor-pointer p-0.5" />
-                    <span className="font-mono text-[9px] uppercase">{fgColor}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="p-6 border-t border-slate-100">
+        {loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#003b1b]"></div>
+          </div>
+        ) : (
+          <div className="flex-1 p-5 space-y-5 text-xs">
+
+            {/* Table Select */}
+            <div>
+              <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Table / Location</label>
+              <select
+                className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none bg-white text-slate-700 font-medium text-xs focus:ring-1 focus:ring-[#003b1b]"
+                value={selectedTable?._id || ''}
+                onChange={(e) => setSelectedTable(tables.find(t => t._id === e.target.value))}
+              >
+                {tables.map(t => <option key={t._id} value={t._id}>{t.name} ({t.type})</option>)}
+              </select>
+            </div>
+
+            {/* Template */}
+            <div>
+              <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Layout Template</label>
+              <div className="grid grid-cols-3 gap-2">
+                {TEMPLATES.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => setTemplate(id)}
+                    className={`py-2.5 px-1 border rounded-xl font-semibold flex flex-col items-center gap-1.5 cursor-pointer transition-all ${
+                      template === id
+                        ? 'border-[#003b1b] bg-[#003b1b]/5 text-[#003b1b]'
+                        : 'border-slate-200 hover:bg-slate-50 text-slate-500'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="text-[9px]">{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Labels */}
+            {template !== 'minimal' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Scan Callout Text</label>
+                  <input
+                    type="text"
+                    className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none text-slate-700 font-medium focus:ring-1 focus:ring-[#003b1b]"
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Table Label Prefix</label>
+                  <input
+                    type="text"
+                    className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none text-slate-700 font-medium focus:ring-1 focus:ring-[#003b1b]"
+                    value={footerLabel}
+                    onChange={(e) => setFooterLabel(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Colors */}
+            <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">Brand Color</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color" value={accentColor}
+                    onChange={(e) => setAccentColor(e.target.value)}
+                    className="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                  />
+                  <span className="font-mono text-[10px] text-slate-500 uppercase">{accentColor}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">QR Color</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color" value={fgColor}
+                    onChange={(e) => setFgColor(e.target.value)}
+                    className="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5"
+                  />
+                  <span className="font-mono text-[10px] text-slate-500 uppercase">{fgColor}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* Download Button */}
+        <div className="p-5 border-t border-slate-100">
           <button
             onClick={handleDownload}
             disabled={!selectedTable}
-            className="w-full h-11 bg-[#003b1b] hover:bg-[#166534] text-white rounded-xl text-xs font-bold shadow flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            className="w-full h-10 bg-[#003b1b] hover:bg-[#166534] disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            Download Design PNG
+            <Download className="w-4 h-4" />
+            Download PNG
           </button>
         </div>
       </aside>
 
-      {/* Canvas Viewport Right */}
-      <main className="flex-1 flex flex-col justify-center items-center p-6 bg-slate-900 overflow-auto">
-        <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-4">Rendering Canvas viewport</span>
-        
-        {/* Shadowed high contrast card standee */}
-        <div className="bg-slate-800 p-8 rounded-3xl border border-slate-700/60 shadow-2xl flex items-center justify-center max-w-full">
-          <canvas 
-            ref={canvasRef} 
-            className="max-w-full rounded-lg shadow-md border border-slate-700 bg-white"
-            style={{ maxHeight: '70vh' }}
+      {/* ── Canvas Preview ── */}
+      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900 overflow-auto gap-4">
+        <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest">Live Preview</p>
+        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700/50 shadow-2xl flex items-center justify-center">
+          <canvas
+            ref={canvasRef}
+            className="max-w-full rounded-xl shadow-lg bg-white"
+            style={{ maxHeight: '72vh' }}
           />
         </div>
-
-        <span className="text-slate-600 text-[9px] font-medium mt-4">
-          Changes compile in real-time. Exported images match canvas dpi 1:1.
-        </span>
+        <p className="text-slate-600 text-[10px]">Updates in real-time · Exported PNG matches canvas 1:1</p>
       </main>
     </div>
   );

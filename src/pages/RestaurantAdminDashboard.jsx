@@ -3,15 +3,43 @@ import { useNavigate, Link } from 'react-router-dom';
 import io from 'socket.io-client';
 import { api, removeRestaurantToken } from '../api';
 import BillPrint from './BillPrint';
+import { 
+  TrendingUp, 
+  ClipboardList, 
+  Receipt, 
+  History, 
+  UtensilsCrossed, 
+  QrCode, 
+  Users, 
+  UserCheck, 
+  Settings, 
+  X, 
+  ChefHat, 
+  LogOut, 
+  ExternalLink,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Globe,
+  Volume2,
+  VolumeX,
+  Bell,
+  Lock
+} from 'lucide-react';
 
 // Tab Component Imports
 import OverviewTab from '../components/dashboard/OverviewTab';
 import OrdersTab from '../components/dashboard/OrdersTab';
 import BillingTab from '../components/dashboard/BillingTab';
+import { optimizeMenuItemImage, optimizeBannerImage, optimizeLogoImage } from '../utils/imageOptimizer';
+import BillingHistoryTab from '../components/dashboard/BillingHistoryTab';
 import MenuTab from '../components/dashboard/MenuTab';
 import TablesTab from '../components/dashboard/TablesTab';
 import CrmTab from '../components/dashboard/CrmTab';
+import WaitersTab from '../components/dashboard/WaitersTab';
 import SettingsTab from '../components/dashboard/SettingsTab';
+import { requestFirebaseNotificationPermission } from '../firebase';
 
 // Modal Component Imports
 import OrderInvoiceModal from '../components/dashboard/OrderInvoiceModal';
@@ -21,8 +49,61 @@ import TableModal from '../components/dashboard/TableModal';
 import BulkPriceModal from '../components/dashboard/BulkPriceModal';
 
 export default function RestaurantAdminDashboard() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('adminActiveTab') || 'overview');
   const [restaurant, setRestaurant] = useState(null);
+  const [modalAlert, setModalAlert] = useState(null);
+
+  // Custom alert & confirm hooks
+  const showAlert = (message, title = 'Notification') => {
+    return new Promise((resolve) => {
+      setModalAlert({
+        title,
+        message,
+        type: 'alert',
+        confirmText: 'OK',
+        onConfirm: () => {
+          setModalAlert(null);
+          resolve();
+        }
+      });
+    });
+  };
+
+  const showConfirm = (message, title = 'Confirmation Required', confirmText = 'Yes', cancelText = 'Cancel') => {
+    return new Promise((resolve) => {
+      setModalAlert({
+        title,
+        message,
+        type: 'confirm',
+        confirmText,
+        cancelText,
+        onConfirm: () => {
+          setModalAlert(null);
+          resolve(true);
+        },
+        onCancel: () => {
+          setModalAlert(null);
+          resolve(false);
+        }
+      });
+    });
+  };
+
+  useEffect(() => {
+    // Override default window.alert
+    const originalAlert = window.alert;
+    window.alert = (msg) => {
+      showAlert(String(msg));
+    };
+
+    // Expose window.showConfirm
+    window.showConfirm = showConfirm;
+
+    return () => {
+      window.alert = originalAlert;
+      delete window.showConfirm;
+    };
+  }, []);
   const [stats, setStats] = useState({
     totalTables: 0,
     todayOrdersCount: 0,
@@ -46,6 +127,7 @@ export default function RestaurantAdminDashboard() {
   const [historyTab, setHistoryTab] = useState('all');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedPrintOrder, setSelectedPrintOrder] = useState(null);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Filter states
   const [orderSearch, setOrderSearch] = useState('');
@@ -57,12 +139,12 @@ export default function RestaurantAdminDashboard() {
 
   // Forms Modals
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [catFormData, setCatFormData] = useState({ name: '', icon: '🍔', isHidden: false, id: null });
+  const [catFormData, setCatFormData] = useState({ name: '', isHidden: false, id: null });
 
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
   const [itemFormData, setItemFormData] = useState({
     name: '', description: '', price: '', categoryId: '', tags: ['Veg'], badges: [], image: '', id: null,
-    hasVariants: false, variants: []
+    hasVariants: false, variants: [], inStock: true
   });
 
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
@@ -73,15 +155,69 @@ export default function RestaurantAdminDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem('admin_sound_enabled') !== 'false';
+  });
+  const [newOrderToast, setNewOrderToast] = useState(null);
+  const newOrderToastTimeout = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [logoUploadStatus, setLogoUploadStatus] = useState({ loading: false, error: null, success: null });
+  const [pwaDiagnostics, setPwaDiagnostics] = useState({
+    swRegistered: 'Checking...',
+    swScope: 'Checking...',
+    manifestUrl: 'Checking...',
+    activeWorker: 'Checking...'
+  });
   const loadedTabs = useRef(new Set());
   const socketRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchInitialData();
+    requestFirebaseNotificationPermission('restaurantadmin');
+    
+    const handler = (e) => {
+      console.log('beforeinstallprompt event fired inside AdminDashboard!');
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Diagnostics checks
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        if (regs.length === 0) {
+          setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'No active service workers registered for this origin.' }));
+        } else {
+          const details = regs.map(r => `Scope: ${r.scope} (Active: ${r.active ? 'Yes' : 'No'})`).join('; ');
+          setPwaDiagnostics(prev => ({
+            ...prev,
+            swRegistered: `Yes (${regs.length} found)`,
+            swScope: details,
+            activeWorker: regs[0].active ? 'Active' : 'Not active / waiting'
+          }));
+        }
+      });
+    } else {
+      setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'ServiceWorker not supported in this browser!' }));
+    }
+
+    // Detect if already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsAppInstalled(true);
+    }
+
+    const installedHandler = () => setIsAppInstalled(true);
+    window.addEventListener('appinstalled', installedHandler);
+
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
+      window.removeEventListener('beforeinstallprompt', handler);
+      window.removeEventListener('appinstalled', installedHandler);
     };
   }, []);
 
@@ -89,28 +225,88 @@ export default function RestaurantAdminDashboard() {
     fetchTabData(activeTab);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (restaurant?.slug) {
+      // Clean up any existing manifests to prevent duplicates/conflicts
+      const existing = document.querySelectorAll('link[rel="manifest"]');
+      existing.forEach(el => el.remove());
+
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.crossOrigin = 'anonymous';
+      link.href = `http://localhost:5000/api/manifest/${restaurant.slug}/admin?origin=${window.location.origin}&t=${Date.now()}`;
+      document.head.appendChild(link);
+      setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
+    }
+    if (restaurant?.logo) {
+      let iconLink = document.querySelector("link[rel~='icon']");
+      if (!iconLink) {
+        iconLink = document.createElement('link');
+        iconLink.rel = 'icon';
+        document.head.appendChild(iconLink);
+      }
+      iconLink.href = restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`;
+
+      let appleIconLink = document.querySelector("link[rel='apple-touch-icon']");
+      if (!appleIconLink) {
+        appleIconLink = document.createElement('link');
+        appleIconLink.rel = 'apple-touch-icon';
+        document.head.appendChild(appleIconLink);
+      }
+      appleIconLink.href = iconLink.href;
+    }
+    if (restaurant?.name) {
+      document.title = restaurant.brandingSettings?.pageTitle || `${restaurant.name} | Admin`;
+    }
+  }, [restaurant]);
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      const [profile, statsData] = await Promise.all([
-        api.restaurant.getProfile(),
-        api.restaurant.getStats()
-      ]);
-      setRestaurant({
-        brandColor: '#003b1b',
-        brandingSettings: {},
-        socialLinks: {},
-        actionButtons: [],
-        customerDataSettings: { enabled: false, fields: {} },
-        ...profile
-      });
-      setStats(statsData);
-      loadedTabs.current.add('overview');
-      loadedTabs.current.add('settings');
-      connectSocket(profile._id);
+      
+      let profile = null;
+      try {
+        profile = await api.restaurant.getProfile();
+        setRestaurant({
+          brandColor: '#003b1b',
+          brandingSettings: {},
+          socialLinks: {},
+          actionButtons: [],
+          customerDataSettings: { enabled: false, fields: {} },
+          ...profile
+        });
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+
+        if (err.status === 401 || err.status === 403) {
+          removeRestaurantToken();
+          navigate('/admin/login');
+          return;
+        }
+      }
+
+      if (profile) {
+        try {
+          const [statsData, historyList] = await Promise.all([
+            api.restaurant.getStats(),
+            api.orders.getOrders({ limit: 200 })
+          ]);
+          setStats(statsData);
+          setHistoryOrders(historyList);
+        } catch (err) {
+          console.error('Failed to load dashboard stats:', err);
+        }
+        
+        loadedTabs.current.add('overview');
+        loadedTabs.current.add('settings');
+        connectSocket(profile._id);
+      }
     } catch (err) {
       console.error(err);
-      if (err.status === 401 || err.status === 403) navigate('/admin/login');
+      if (err.status === 401 || err.status === 403) {
+        removeRestaurantToken();
+        navigate('/admin/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -123,10 +319,14 @@ export default function RestaurantAdminDashboard() {
         setTabLoading(true);
       }
       if (tab === 'overview') {
-        const statsData = await api.restaurant.getStats();
+        const [statsData, historyList] = await Promise.all([
+          api.restaurant.getStats(),
+          api.orders.getOrders({ limit: 200 })
+        ]);
         setStats(statsData);
+        setHistoryOrders(historyList);
       } else if (tab === 'orders') {
-        const data = await api.orders.getOrders();
+        const data = await api.orders.getOrders({ live: 'true' });
         setOrders(data);
       } else if (tab === 'billing') {
         const [activeList, historyList, summaryStats, tablesList] = await Promise.all([
@@ -160,6 +360,10 @@ export default function RestaurantAdminDashboard() {
       loadedTabs.current.add(tab);
     } catch (err) {
       console.error(err);
+      if (err.status === 401 || err.status === 403) {
+        removeRestaurantToken();
+        navigate('/admin/login');
+      }
     } finally {
       if (isFirstLoad) {
         setTabLoading(false);
@@ -167,36 +371,42 @@ export default function RestaurantAdminDashboard() {
     }
   };
 
-  const playNotificationSound = () => {
+  const playNotificationSound = (force = false) => {
+    if (!soundEnabled && !force) return;
     try {
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15); // A5
+
+      gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.7);
 
       oscillator.connect(gainNode);
       gainNode.connect(audioCtx.destination);
 
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-      gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-
       oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.15);
-
-      setTimeout(() => {
-        const osc2 = audioCtx.createOscillator();
-        const gain2 = audioCtx.createGain();
-        osc2.connect(gain2);
-        gain2.connect(audioCtx.destination);
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
-        gain2.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        osc2.start();
-        osc2.stop(audioCtx.currentTime + 0.3);
-      }, 150);
+      oscillator.stop(audioCtx.currentTime + 0.7);
     } catch (e) {
-      console.error('Audio synthesizer error:', e);
+      console.warn('Audio notification error:', e);
     }
+  };
+
+  const toggleSound = () => {
+    setSoundEnabled(prev => {
+      const next = !prev;
+      localStorage.setItem('admin_sound_enabled', String(next));
+      if (next) {
+        playNotificationSound(true);
+      }
+      return next;
+    });
   };
 
   const refreshBillingSummary = async () => {
@@ -209,12 +419,21 @@ export default function RestaurantAdminDashboard() {
   };
 
   const connectSocket = (restaurantId) => {
+    if (socketRef.current) socketRef.current.disconnect();
     socketRef.current = io('http://localhost:5000');
     
-    socketRef.current.emit('joinRestaurant', restaurantId);
+    socketRef.current.on('connect', () => {
+      console.log('Admin socket connected, rejoining room...');
+      socketRef.current.emit('joinRestaurant', restaurantId);
+      if (activeTab) fetchTabData(activeTab);
+    });
 
     socketRef.current.on('orderCreated', (newOrder) => {
-      setOrders((prev) => [newOrder, ...prev]);
+      setOrders((prev) => {
+        const exists = prev.some(o => o._id === newOrder._id);
+        if (exists) return prev.map(o => o._id === newOrder._id ? newOrder : o);
+        return [newOrder, ...prev];
+      });
       
       setBillingOrders((prev) => {
         if (newOrder.status !== 'Completed' && newOrder.status !== 'Cancelled') {
@@ -230,6 +449,13 @@ export default function RestaurantAdminDashboard() {
         if (exists) return prev.map(o => o._id === newOrder._id ? newOrder : o);
         return [newOrder, ...prev].slice(0, 200);
       });
+
+      // Show floating notification banner
+      setNewOrderToast(newOrder);
+      if (newOrderToastTimeout.current) clearTimeout(newOrderToastTimeout.current);
+      newOrderToastTimeout.current = setTimeout(() => {
+        setNewOrderToast(null);
+      }, 8000);
 
       playNotificationSound();
       refreshStats();
@@ -265,6 +491,14 @@ export default function RestaurantAdminDashboard() {
       refreshStats();
       refreshBillingSummary();
     });
+
+    socketRef.current.on('orderDeleted', (orderId) => {
+      setOrders((prev) => prev.filter(o => o._id !== orderId));
+      setBillingOrders((prev) => prev.filter(o => o._id !== orderId));
+      setHistoryOrders((prev) => prev.filter(o => o._id !== orderId));
+      refreshStats();
+      refreshBillingSummary();
+    });
   };
 
   const refreshStats = async () => {
@@ -276,7 +510,20 @@ export default function RestaurantAdminDashboard() {
     }
   };
 
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User choice for PWA install: ${outcome}`);
+    setDeferredPrompt(null);
+  };
+
   const handleLogout = () => {
+    setIsLogoutModalOpen(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setIsLogoutModalOpen(false);
     removeRestaurantToken();
     navigate('/admin/login');
   };
@@ -291,7 +538,7 @@ export default function RestaurantAdminDashboard() {
         await api.menu.createCategory(catFormData);
       }
       setIsCategoryModalOpen(false);
-      setCatFormData({ name: '', icon: '🍔', isHidden: false, id: null });
+      setCatFormData({ name: '', isHidden: false, id: null });
       const data = await api.menu.getCategories();
       setCategories(data);
     } catch (err) {
@@ -300,7 +547,7 @@ export default function RestaurantAdminDashboard() {
   };
 
   const handleDeleteCategory = async (id) => {
-    if (!window.confirm('Delete category? All menu items under this category will also be deleted!')) return;
+    if (!await showConfirm('Delete category? All menu items under this category will also be deleted!')) return;
     try {
       await api.menu.deleteCategory(id);
       setCategories(categories.filter(c => c._id !== id));
@@ -316,6 +563,7 @@ export default function RestaurantAdminDashboard() {
     try {
       const payload = {
         ...itemFormData,
+        inStock: itemFormData.inStock !== false,
         price: itemFormData.hasVariants ? undefined : parseFloat(itemFormData.price || 0),
         variants: itemFormData.hasVariants
           ? itemFormData.variants.map(v => ({ name: v.name, price: parseFloat(v.price || 0) }))
@@ -327,7 +575,7 @@ export default function RestaurantAdminDashboard() {
         await api.menu.createItem(payload);
       }
       setIsItemModalOpen(false);
-      setItemFormData({ name: '', description: '', price: '', categoryId: '', tags: ['Veg'], badges: [], image: '', id: null, hasVariants: false, variants: [] });
+      setItemFormData({ name: '', description: '', price: '', categoryId: '', tags: ['Veg'], badges: [], image: '', id: null, hasVariants: false, variants: [], inStock: true });
       const data = await api.menu.getItems();
       setMenuItems(data);
     } catch (err) {
@@ -336,11 +584,18 @@ export default function RestaurantAdminDashboard() {
   };
 
   const handleToggleStock = async (id) => {
+    const item = menuItems.find(i => i._id === id);
+    const itemName = item?.name || 'this dish';
+    const nextStatus = item?.inStock ? 'Out of Stock (Unavailable)' : 'Available (In Stock)';
+    const confirmMsg = `Are you sure you want to mark "${itemName}" as ${nextStatus}?`;
+    
+    if (!await showConfirm(confirmMsg, 'Confirm Stock Status', 'Yes, Update', 'Cancel')) return;
+    
     try {
       await api.menu.toggleStock(id);
       setMenuItems(menuItems.map(i => i._id === id ? { ...i, inStock: !i.inStock } : i));
     } catch (err) {
-      alert('Error changing item stock state');
+      alert('Error changing item stock state: ' + (err.message || ''));
     }
   };
 
@@ -355,7 +610,7 @@ export default function RestaurantAdminDashboard() {
   };
 
   const handleDeleteItem = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this menu item?')) return;
+    if (!await showConfirm('Are you sure you want to delete this menu item?')) return;
     try {
       await api.menu.deleteItem(id);
       setMenuItems(menuItems.filter(i => i._id !== id));
@@ -406,7 +661,7 @@ export default function RestaurantAdminDashboard() {
   };
 
   const handleDeleteTable = async (id) => {
-    if (!window.confirm('Delete table? Diners scanning this QR will no longer be able to access the menu.')) return;
+    if (!await showConfirm('Delete table? Diners scanning this QR will no longer be able to access the menu.')) return;
     try {
       await api.tables.deleteTable(id);
       setTables(tables.filter(t => t._id !== id));
@@ -417,7 +672,7 @@ export default function RestaurantAdminDashboard() {
 
   // --- Integrated Counter Billing Handlers ---
   const handleSettleBillingOrder = async (orderId) => {
-    if (!window.confirm('Settle billing for this order and mark as Completed?')) return;
+    if (!await showConfirm('Settle billing for this order and mark as Completed?')) return;
     try {
       await api.counter.completeOrder(orderId);
       setBillingOrders((prev) => prev.filter(o => o._id !== orderId));
@@ -438,7 +693,7 @@ export default function RestaurantAdminDashboard() {
   // --- Orders status update ---
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
-      await api.orders.updateStatus(orderId, newStatus);
+      await api.orders.updateStatus(orderId, newStatus, (newStatus === 'Served' || newStatus === 'Completed') ? 'Admin' : undefined);
       if (selectedOrder && selectedOrder._id === orderId) {
         setSelectedOrder({ ...selectedOrder, status: newStatus });
       }
@@ -513,170 +768,434 @@ export default function RestaurantAdminDashboard() {
     });
   };
 
+  const validateAndOptimizeLogoFile = (file) => {
+    return new Promise((resolve) => {
+      if (file.type !== 'image/png') {
+        resolve({ ok: false, error: 'Only PNG format allowed. Please convert to PNG first.' });
+        return;
+      }
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (w !== h) {
+          resolve({ ok: false, error: `Image must be square (1:1). Yours is ${w}×${h}px — please crop to square.` });
+          return;
+        }
+        if (w < 192) {
+          resolve({ ok: false, error: `Too small (${w}×${h}px). Minimum 192×192px required. Recommended: 512×512px.` });
+          return;
+        }
+
+        // Draw to exactly 512x512 canvas for perfect PWA sizing and display
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Clear background with transparency
+        ctx.clearRect(0, 0, 512, 512);
+
+        // Draw image stretched to exactly 512x512 (since it's already square, no distortion happens)
+        ctx.drawImage(img, 0, 0, 512, 512);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            resolve({ ok: false, error: 'Could not process and resize image.' });
+            return;
+          }
+          const optimizedFile = new File([blob], 'logo-512.png', { type: 'image/png' });
+          resolve({ ok: true, file: optimizedFile, width: 512, height: 512 });
+        }, 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve({ ok: false, error: 'Could not read image file.' }); };
+      img.src = url;
+    });
+  };
+
+  const handleUploadBanner = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      for (const file of files) {
+        // High-quality WebP banner compression (1400x800 max, 88% quality)
+        const optimized = await optimizeBannerImage(file);
+        const formData = new FormData();
+        formData.append('image', optimized.file);
+        const res = await api.restaurant.uploadImage(formData);
+        if (res.imageUrl) {
+          setRestaurant(prev => ({
+            ...prev,
+            banners: [...(prev.banners || []), res.imageUrl]
+          }));
+        }
+      }
+    } catch (err) {
+      alert('Banner upload failed: ' + err.message);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const handleUploadLogo = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('logo', file);
+    setLogoUploadStatus({ loading: true, error: null, success: null });
     try {
+      // High-quality 512x512 WebP conversion without visible quality loss
+      const optimized = await optimizeLogoImage(file);
+      const formData = new FormData();
+      formData.append('logo', optimized.file);
+
       const res = await api.restaurant.uploadLogo(formData);
-      setRestaurant({ ...restaurant, logo: res.logoUrl });
+      setRestaurant(prev => ({ ...prev, logo: res.logoUrl }));
+      const origKb = Math.round(optimized.originalSize / 1024);
+      const newKb = Math.round(optimized.compressedSize / 1024);
+      setLogoUploadStatus({
+        loading: false,
+        error: null,
+        success: `Optimized (${origKb}KB → ${newKb}KB WebP) — Uploaded successfully!`
+      });
     } catch (err) {
-      alert('Error uploading logo');
+      setLogoUploadStatus({ loading: false, error: err.message || 'Upload failed. Please try again.', success: null });
+    } finally {
+      e.target.value = '';
     }
   };
 
   const handleUploadItemImageForm = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('image', file);
     try {
+      // High-quality WebP menu item compression (900x900 max, 88% quality)
+      const optimized = await optimizeMenuItemImage(file);
+      const formData = new FormData();
+      formData.append('image', optimized.file);
       const res = await api.restaurant.uploadImage(formData);
-      setItemFormData({ ...itemFormData, image: res.imageUrl });
+      setItemFormData(prev => ({ ...prev, image: res.imageUrl }));
     } catch (err) {
-      alert('Error uploading image');
+      alert('Error uploading image: ' + err.message);
+    } finally {
+      e.target.value = '';
     }
   };
 
   return (
-    <div className="bg-[#f3f4f6] text-[#191c1e] min-h-screen w-full md:flex font-sans">
+    <div className="bg-[#f8fafc] text-slate-900 min-h-screen w-full md:flex font-sans antialiased">
       {/* Mobile overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`bg-[#0d1321] w-[220px] flex flex-col fixed h-full shadow-2xl z-40 text-left border-r border-slate-800/80 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+      <aside className={`bg-[#0f172a] flex flex-col fixed h-full shadow-2xl z-40 text-left border-r border-slate-800/90 transition-all duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 ${isSidebarCollapsed ? 'w-[72px]' : 'w-[250px]'}`}>
+        
         {/* Header Block */}
-        <div className="px-4 py-3.5 flex items-center justify-between border-b border-slate-800/80 bg-[#090d16]">
-          <div className="flex items-center space-x-2.5">
+        <div className={`px-4 py-4 flex items-center border-b border-slate-800/90 bg-slate-950/40 ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
+          <div className="flex items-center gap-3 min-w-0">
             {restaurant?.logo ? (
               <img 
                 src={restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`} 
                 alt="Logo" 
-                className="w-8 h-8 rounded-lg object-cover border border-slate-700/60 ring-2 ring-emerald-500/20" 
+                className="w-9 h-9 rounded-xl object-cover border border-slate-700/80 shrink-0 shadow-sm" 
               />
             ) : (
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#003b1b] to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-950/40">
-                <span className="material-symbols-outlined text-white text-[16px]">restaurant</span>
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-[#003b1b] flex items-center justify-center shrink-0 shadow-md border border-emerald-500/40">
+                <UtensilsCrossed className="text-white w-4.5 h-4.5" />
               </div>
             )}
-            <div className="min-w-0">
-              <span className="font-extrabold text-xs text-white tracking-wide block truncate">{restaurant?.name || 'My Restaurant'}</span>
-              <span className="inline-flex items-center px-1.5 py-0.25 rounded text-[8px] font-bold uppercase tracking-wider bg-emerald-50/10 text-emerald-400 border border-emerald-500/25 mt-0.5">
-                {restaurant?.package || 'Free'} Plan
-              </span>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-extrabold text-[13.5px] text-white tracking-tight truncate">{restaurant?.name || 'Restaurant Admin'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 animate-pulse"></span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    {restaurant?.package || 'Enterprise'} Plan
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white transition-colors cursor-pointer">
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+          
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Mobile close */}
+            {!isSidebarCollapsed && (
+              <button onClick={() => setSidebarOpen(false)} className="md:hidden w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {/* Desktop collapse toggle */}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="hidden md:flex w-7 h-7 items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-lg transition-all cursor-pointer border border-transparent hover:border-slate-700"
+              title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
         
         {/* Nav Links */}
-        <nav className="flex-1 mt-4 overflow-y-auto px-2 space-y-0.5 hide-scrollbar">
-          <span className="px-2.5 text-[9px] uppercase tracking-widest font-black text-slate-500/80 block mb-1.5">Workspace</span>
-          <ul className="flex flex-col space-y-0.5">
-            {[
-              { id: 'overview', label: 'Analytics & Stats', icon: 'dashboard' },
-              { id: 'orders', label: 'Live Orders', icon: 'receipt_long', badge: stats.activeOrdersCount },
-              { id: 'billing', label: 'Counter Billing', icon: 'point_of_sale', badge: billingOrders.filter(o => o.billRequested).length },
-              { id: 'menu', label: 'Menu & Food', icon: 'menu_book' },
-              { id: 'tables', label: 'Tables & QRs', icon: 'qr_code_2' },
-              { id: 'crm', label: 'Customer CRM', icon: 'contacts' },
-              { id: 'settings', label: 'Branding Setup', icon: 'palette' }
-            ].map(tab => {
-              const isActive = activeTab === tab.id;
-              return (
-                <li key={tab.id}>
-                  <button
-                    onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 text-[11px] font-semibold transition-all duration-200 cursor-pointer text-left rounded-lg group relative ${
-                      isActive
-                        ? 'text-white shadow-lg shadow-black/10 font-bold'
-                        : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-100'
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 hide-scrollbar">
+          
+          {/* Main Controls */}
+          <div>
+            {!isSidebarCollapsed && (
+              <div className="flex items-center justify-between px-2.5 mb-2">
+                <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">Workspace Menu</span>
+              </div>
+            )}
+            <ul className="flex flex-col space-y-1">
+              {[
+                { id: 'overview', label: 'Analytics Dashboard', icon: TrendingUp },
+                { id: 'orders', label: 'Live Orders', icon: ClipboardList, badge: stats.activeOrdersCount },
+                { id: 'billing', label: 'Counter Cashier', icon: Receipt, badge: billingOrders.filter(o => o.billRequested).length },
+                { id: 'billing-history', label: 'Settlement History', icon: History },
+                { id: 'menu', label: 'Menu & Food Catalog', icon: UtensilsCrossed },
+                { id: 'tables', label: 'Tables & QR Codes', icon: QrCode },
+                { id: 'crm', label: 'Customer Directory', icon: Users },
+                ...(restaurant?.features?.waiterPanel !== false ? [{ id: 'waiters', label: 'Service Staff', icon: UserCheck }] : []),
+                { id: 'settings', label: 'System Settings', icon: Settings }
+              ].map(tab => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <li key={tab.id}>
+                    <button
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        localStorage.setItem('adminActiveTab', tab.id);
+                        setSidebarOpen(false);
+                      }}
+                      className={`w-full flex items-center transition-all duration-150 rounded-xl group cursor-pointer ${
+                        isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                      } ${
+                        isActive
+                          ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-950/40 ring-1 ring-emerald-400/30'
+                          : 'text-slate-300 hover:bg-slate-800/70 hover:text-white font-medium'
+                      }`}
+                      title={isSidebarCollapsed ? tab.label : ''}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <tab.icon 
+                          className={`w-4.5 h-4.5 shrink-0 transition-transform group-hover:scale-105 ${
+                            isActive ? 'text-white' : 'text-slate-400 group-hover:text-emerald-400'
+                          }`}
+                        />
+                        {!isSidebarCollapsed && (
+                          <span className={`text-[13.5px] truncate ${
+                            isActive ? 'text-white font-bold' : 'text-slate-300 group-hover:text-white'
+                          }`}>{tab.label}</span>
+                        )}
+                      </div>
+                      {!isSidebarCollapsed && tab.badge > 0 && (
+                        <span className={`ml-auto px-2 py-0.5 rounded-full text-[11px] font-black shadow-xs ${
+                          isActive ? 'bg-white text-emerald-800' : 'bg-rose-500 text-white'
+                        }`}>
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* Live Terminal Feeds */}
+          <div>
+            {!isSidebarCollapsed && (
+              <div className="flex items-center justify-between px-2.5 mb-2">
+                <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">Terminal Terminus</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+            )}
+            <ul className="flex flex-col space-y-1">
+              <li>
+                {restaurant?.features?.kitchenPanel === false ? (
+                  <div 
+                    className={`w-full flex items-center rounded-xl text-slate-500 bg-slate-900/40 border border-slate-800/80 cursor-not-allowed ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
                     }`}
-                    style={isActive ? { backgroundColor: restaurant?.brandColor || '#003b1b' } : {}}
+                    title="Kitchen KDS is not enabled in your current plan. Contact Super Admin to upgrade."
                   >
-                    <div className="flex items-center">
-                      <span className={`material-symbols-outlined mr-2.5 text-[18px] transition-transform duration-200 ${isActive ? 'scale-105 text-white' : 'text-slate-500 group-hover:text-slate-300'}`}>{tab.icon}</span>
-                      <span>{tab.label}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ChefHat className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] font-medium truncate line-through">Kitchen KDS</span>}
                     </div>
-                    {tab.badge > 0 && (
-                      <span className={`ml-2 px-1.5 py-0.25 rounded-full text-[8px] font-black transition-colors ${isActive ? 'bg-white text-slate-900' : 'bg-rose-500 text-white animate-pulse'}`}>
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                    {!isSidebarCollapsed && <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                  </div>
+                ) : restaurant?.slug ? (
+                  <a 
+                    href={`/kitchen/${restaurant.slug}`} 
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setSidebarOpen(false)}
+                    className={`w-full flex items-center transition-all duration-150 rounded-xl group text-slate-300 hover:bg-slate-800/70 hover:text-white border border-transparent hover:border-slate-700/60 ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title={isSidebarCollapsed ? 'Kitchen Display (KDS)' : ''}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ChefHat className="w-4.5 h-4.5 text-amber-400 group-hover:scale-105 transition-transform shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-300 group-hover:text-white font-medium truncate">Kitchen KDS</span>}
+                    </div>
+                    {!isSidebarCollapsed && <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 shrink-0" />}
+                  </a>
+                ) : (
+                  <div className={`w-full flex items-center text-slate-600 select-none ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'}`}>
+                    <div className="flex items-center gap-3">
+                      <ChefHat className="w-4.5 h-4.5 text-slate-600 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-600">Kitchen KDS</span>}
+                    </div>
+                  </div>
+                )}
+              </li>
+              <li>
+                {restaurant?.features?.waiterPanel === false ? (
+                  <div 
+                    className={`w-full flex items-center rounded-xl text-slate-500 bg-slate-900/40 border border-slate-800/80 cursor-not-allowed ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title="Waiter Terminal is not enabled in your current plan. Contact Super Admin to upgrade."
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserCheck className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] font-medium truncate line-through">Waiter Terminal</span>}
+                    </div>
+                    {!isSidebarCollapsed && <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                  </div>
+                ) : restaurant?.slug ? (
+                  <a 
+                    href={`http://localhost:5174/waiter/${restaurant.slug}`} 
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setSidebarOpen(false)}
+                    className={`w-full flex items-center transition-all duration-150 rounded-xl group text-slate-300 hover:bg-slate-800/70 hover:text-white border border-transparent hover:border-slate-700/60 ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title={isSidebarCollapsed ? 'Waiter Screen' : ''}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserCheck className="w-4.5 h-4.5 text-blue-400 group-hover:scale-105 transition-transform shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-300 group-hover:text-white font-medium truncate">Waiter Terminal</span>}
+                    </div>
+                    {!isSidebarCollapsed && <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 shrink-0" />}
+                  </a>
+                ) : (
+                  <div className={`w-full flex items-center text-slate-600 select-none ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'}`}>
+                    <div className="flex items-center gap-3">
+                      <UserCheck className="w-4.5 h-4.5 text-slate-600 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-600">Waiter Terminal</span>}
+                    </div>
+                  </div>
+                )}
+              </li>
+              <li>
+                {restaurant?.slug ? (
+                  <a 
+                    href={`http://localhost:5173/menu/${restaurant.slug}`} 
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setSidebarOpen(false)}
+                    className={`w-full flex items-center transition-all duration-150 rounded-xl group text-slate-300 hover:bg-slate-800/70 hover:text-white border border-transparent hover:border-slate-700/60 ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title={isSidebarCollapsed ? 'Customer Digital Menu' : ''}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Globe className="w-4.5 h-4.5 text-emerald-400 group-hover:scale-105 transition-transform shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-300 group-hover:text-white font-medium truncate">Customer Menu</span>}
+                    </div>
+                    {!isSidebarCollapsed && <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 shrink-0" />}
+                  </a>
+                ) : (
+                  <div className={`w-full flex items-center text-slate-600 select-none ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'}`}>
+                    <div className="flex items-center gap-3">
+                      <Globe className="w-4.5 h-4.5 text-slate-600 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-600">Customer Menu</span>}
+                    </div>
+                  </div>
+                )}
+              </li>
+            </ul>
+          </div>
         </nav>
 
-        {/* Action Panel Links */}
-        <div className="p-3 border-t border-slate-800/80 space-y-1.5 bg-[#090d16]">
-          <span className="px-2 text-[8px] uppercase tracking-widest font-black text-slate-500 block mb-1">Live Views</span>
-          
-          {/* Kitchen panel link */}
-          <a 
-            href={`/kitchen/${restaurant?.slug}`} 
-            target="_blank"
-            rel="noreferrer"
-            className="w-full flex items-center gap-2.5 px-3 py-2 bg-emerald-950/40 text-emerald-400 border border-emerald-900/30 rounded-lg hover:bg-emerald-900/40 hover:text-emerald-300 transition-all text-[10px] font-bold"
-          >
-            <span className="material-symbols-outlined text-[16px]">chef_hat</span>
-            <span>Kitchen View</span>
-            <span className="material-symbols-outlined text-[10px] ml-auto opacity-60">open_in_new</span>
-          </a>
+        {/* PWA Install Button */}
+        {!isAppInstalled && (
+          <div className="px-3 py-2.5 border-t border-slate-800/80 bg-slate-950/20">
+            <button
+              onClick={() => {
+                if (deferredPrompt) {
+                  handleInstallClick();
+                } else {
+                  setShowInstallGuide(true);
+                }
+              }}
+              className={`w-full flex items-center gap-2.5 transition-all duration-200 rounded-xl group ${
+                deferredPrompt
+                  ? 'text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/40 bg-emerald-500/10'
+                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-white border border-slate-700/80 bg-slate-900/60'
+              } cursor-pointer ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2'}`}
+              title={deferredPrompt ? 'Install App' : 'How to Install'}
+            >
+              <Download className={`w-4 h-4 shrink-0 ${deferredPrompt ? 'text-emerald-400' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span className="text-[11.5px] font-bold">{deferredPrompt ? 'Install App' : 'Install Guide'}</span>}
+            </button>
+          </div>
+        )}
 
-          {/* Waiter panel link */}
-          <a 
-            href={`/waiter/${restaurant?.slug}`} 
-            target="_blank"
-            rel="noreferrer"
-            className="w-full flex items-center gap-2.5 px-3 py-2 bg-amber-950/40 text-amber-400 border border-amber-900/30 rounded-lg hover:bg-amber-900/40 hover:text-amber-300 transition-all text-[10px] font-bold"
-          >
-            <span className="material-symbols-outlined text-[16px]">hail</span>
-            <span>Waiter View</span>
-            <span className="material-symbols-outlined text-[10px] ml-auto opacity-60">open_in_new</span>
-          </a>
-
-          {/* Logout Button */}
-          <button 
+        {/* Profile Footer with Logout */}
+        <div className={`p-3 border-t border-slate-800/90 bg-slate-950/60 flex items-center gap-2.5 ${isSidebarCollapsed ? 'flex-col justify-center' : 'justify-between'}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-br from-slate-700 to-slate-800 text-white font-extrabold flex items-center justify-center border border-slate-600 uppercase text-[12px] shrink-0 shadow-xs">
+              {restaurant?.name?.substring(0, 1) || 'A'}
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="min-w-0">
+                <span className="font-extrabold text-[12px] text-white block truncate leading-tight">Admin Manager</span>
+                <span className="text-[10px] text-slate-400 block truncate mt-0.5 leading-tight">{restaurant?.email || 'admin@restaurant.com'}</span>
+              </div>
+            )}
+          </div>
+          <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 px-3 py-2 text-rose-400 bg-rose-950/30 border border-rose-900/20 rounded-lg hover:bg-rose-900/50 hover:text-rose-300 transition-all text-[10px] font-extrabold cursor-pointer mt-2"
+            className="w-8 h-8 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-600 text-rose-400 hover:text-white flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-xs"
+            title="Sign Out"
           >
-            <span className="material-symbols-outlined text-[16px]">logout</span>
-            <span>Logout Account</span>
+            <LogOut className="w-3.5 h-3.5" />
           </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
-      <main className="w-full md:flex-1 md:ml-[220px] p-3 md:p-6 min-w-0 text-left bg-slate-50">
+      <main className={`w-full md:flex-1 p-2.5 sm:p-4 md:p-6 min-w-0 text-left bg-[#f8fafc] transition-all duration-300 ${
+        isSidebarCollapsed ? 'md:ml-[72px]' : 'md:ml-[250px]'
+      }`}>
         {/* Mobile top bar */}
-        <div className="md:hidden flex items-center justify-between p-3 bg-white border border-slate-200 rounded-2xl mb-5 shadow-sm">
+        <div className="md:hidden flex items-center justify-between p-3.5 bg-white border border-slate-200 rounded-2xl mb-3.5 shadow-sm">
           <div className="flex items-center gap-3">
             <button onClick={() => setSidebarOpen(true)} className="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-700 shadow-sm transition-colors hover:bg-slate-100 cursor-pointer">
-              <span className="material-symbols-outlined text-[22px]">menu</span>
+              <Menu className="w-5 h-5 text-slate-700" />
             </button>
-            <span className="font-extrabold text-slate-800 text-sm">{restaurant?.name || 'Dashboard'}</span>
+            <span className="font-extrabold text-slate-900 text-sm">{restaurant?.name || 'Dashboard'}</span>
           </div>
-          <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full border border-slate-200">{restaurant?.package}</span>
+          <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-200">{restaurant?.package}</span>
         </div>
 
         {loading ? (
-          <div className="text-center py-20">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#003b1b] mx-auto"></div>
-            <p className="text-slate-400 text-sm mt-4">Loading operational details...</p>
+          <div className="text-center py-24">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-3 border-[#003b1b] mx-auto"></div>
+            <p className="text-slate-600 text-sm mt-4 font-bold">Loading operational details...</p>
           </div>
         ) : (
           <>
             {/* Conditional Tab Rendering */}
             {activeTab === 'overview' && (
-              <OverviewTab stats={stats} restaurant={restaurant} />
+              <OverviewTab stats={stats} restaurant={restaurant} historyOrders={historyOrders} onNavigate={setActiveTab} />
             )}
 
             {activeTab === 'orders' && (
@@ -691,6 +1210,8 @@ export default function RestaurantAdminDashboard() {
                 setIsOrderModalOpen={setIsOrderModalOpen}
                 tabLoading={tabLoading}
                 api={api}
+                soundEnabled={soundEnabled}
+                toggleSound={toggleSound}
               />
             )}
 
@@ -710,6 +1231,13 @@ export default function RestaurantAdminDashboard() {
                 handleSettleBillingOrder={handleSettleBillingOrder}
                 fetchTabData={fetchTabData}
                 tabLoading={tabLoading}
+              />
+            )}
+
+            {activeTab === 'billing-history' && (
+              <BillingHistoryTab
+                tables={tables}
+                handleOpenPrintBilling={handleOpenPrintBilling}
               />
             )}
 
@@ -739,6 +1267,7 @@ export default function RestaurantAdminDashboard() {
                 handleToggleTableActive={handleToggleTableActive}
                 handleDeleteTable={handleDeleteTable}
                 api={api}
+                restaurant={restaurant}
               />
             )}
 
@@ -751,6 +1280,10 @@ export default function RestaurantAdminDashboard() {
               />
             )}
 
+            {activeTab === 'waiters' && (
+              <WaitersTab />
+            )}
+
             {activeTab === 'settings' && (
               <SettingsTab
                 restaurant={restaurant}
@@ -760,6 +1293,8 @@ export default function RestaurantAdminDashboard() {
                 handleSaveActionButtons={handleSaveActionButtons}
                 setCustomerField={setCustomerField}
                 handleUploadLogo={handleUploadLogo}
+                handleUploadBanner={handleUploadBanner}
+                logoUploadStatus={logoUploadStatus}
               />
             )}
           </>
@@ -814,6 +1349,114 @@ export default function RestaurantAdminDashboard() {
           order={selectedPrintOrder} 
           onClose={() => setIsPrintModalOpen(false)} 
         />
+      )}
+
+      {/* Logout Confirmation Popup Modal */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 relative text-left flex flex-col border border-slate-100 animate-fadeIn">
+            <div className="w-12 h-12 bg-rose-50 border border-rose-100 text-rose-500 flex items-center justify-center rounded-2xl mb-4">
+              <LogOut className="w-6 h-6" />
+            </div>
+            
+            <h3 className="text-base font-extrabold text-slate-800">Confirm Sign Out</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-1.5 leading-relaxed">
+              Are you sure you want to end your current session? You will need to log back in with your credentials to access the admin panel.
+            </p>
+            
+            <div className="mt-6 flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-center text-xs cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmLogout}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl shadow-md text-center text-xs cursor-pointer transition-colors"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-time New Order Floating Toast Banner */}
+      {newOrderToast && (
+        <div className="fixed bottom-5 right-5 z-50 animate-slideUp max-w-sm w-[92vw] sm:w-88 bg-slate-900 text-white rounded-2xl shadow-2xl p-4 border border-slate-700/80 flex items-start gap-3.5 backdrop-blur-md">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+            <Bell className="w-5 h-5 text-amber-400 animate-bounce" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                New Order Received!
+              </span>
+              <button 
+                onClick={() => setNewOrderToast(null)}
+                className="text-slate-400 hover:text-white p-0.5 cursor-pointer transition-colors"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm font-black text-white mt-1 truncate">
+              {newOrderToast.tableName} • <span className="font-mono text-xs text-slate-300">{newOrderToast.orderNumber || ''}</span>
+            </p>
+            <p className="text-xs text-slate-300 font-medium mt-0.5 truncate">
+              {(newOrderToast.items || []).map(i => `${i.name} (x${i.quantity})`).join(', ') || 'Items'} • ₹{newOrderToast.totalAmount || 0}
+            </p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setActiveTab('orders');
+                  setSelectedOrder(newOrderToast);
+                  setIsOrderModalOpen(true);
+                  setNewOrderToast(null);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-xs"
+              >
+                View Order
+              </button>
+              <button
+                onClick={() => setNewOrderToast(null)}
+                className="px-2.5 py-1.5 text-slate-400 hover:text-white font-medium text-xs transition-colors cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Alert/Confirm Modal */}
+      {modalAlert && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 relative text-left flex flex-col border border-slate-100">
+            <h3 className="font-extrabold text-base text-slate-800 leading-snug">{modalAlert.title}</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-2 leading-relaxed whitespace-pre-line">{modalAlert.message}</p>
+            <div className="mt-6 flex gap-2.5">
+              {modalAlert.type === 'confirm' && (
+                <button
+                  onClick={modalAlert.onCancel}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-center text-xs cursor-pointer transition-colors"
+                >
+                  {modalAlert.cancelText || 'Cancel'}
+                </button>
+              )}
+              <button
+                onClick={modalAlert.onConfirm}
+                className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-xl shadow-md text-center text-xs cursor-pointer transition-colors"
+              >
+                {modalAlert.confirmText || 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

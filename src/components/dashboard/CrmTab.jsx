@@ -1,80 +1,75 @@
 import React from 'react';
+import { Users, TrendingUp, RotateCcw, Cake, Download } from 'lucide-react';
 
-export default function CrmTab({
-  customers,
-  advancedAnalytics,
-  tabLoading,
-  api
-}) {
+export default function CrmTab({ customers = [], advancedAnalytics = {}, tabLoading, api }) {
+  const totalCrmRevenue = customers.reduce((sum, c) => sum + (c.totalSpend || 0), 0);
+
+  const metricCards = [
+    { label: 'Total Customers', value: customers.length, icon: Users, color: 'text-violet-600', bg: 'bg-violet-500/10 border-violet-200/80' },
+    { label: 'Total CRM Spend', value: `₹${totalCrmRevenue.toLocaleString()}`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-500/10 border-emerald-200/80' },
+    { label: 'Returning Guests', value: advancedAnalytics?.customerRetention?.returning || 0, icon: RotateCcw, color: 'text-blue-600', bg: 'bg-blue-500/10 border-blue-200/80' },
+    { label: 'Birthdays Tracked', value: customers.filter(c => c.dateOfBirth).length, icon: Cake, color: 'text-rose-600', bg: 'bg-rose-500/10 border-rose-200/80' },
+  ];
+
   return (
-    <div className="space-y-6 animate-fadeIn text-xs text-left">
+    <div className="space-y-5 animate-fadeIn text-left">
       {tabLoading ? (
-        <div className="text-center py-20">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#003b1b] mx-auto"></div>
+        <div className="flex items-center justify-center py-24">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#003b1b]" />
         </div>
       ) : (
         <>
-          <header className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-4 shadow-sm">
             <div>
-              <h1 className="text-xl font-bold text-slate-800 font-sans">Customer CRM</h1>
-              <p className="text-[10px] text-slate-400 mt-1">Customer profiles, visits, birthdays, anniversaries, retention, and export-ready history.</p>
+              <h1 className="text-lg font-extrabold text-slate-900">Customer CRM</h1>
+              <p className="text-xs font-medium text-slate-500 mt-0.5">Registered profiles, visit logs, and spend tracking.</p>
             </div>
-            <a
-              href={api.crm.exportCsvUrl()}
-              className="bg-[#003b1b] hover:bg-[#166534] text-white px-3.5 py-2 rounded-xl text-[10px] font-bold shadow-sm inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[16px]">download</span>
+            <a href={api.crm.exportCsvUrl()} className="inline-flex items-center gap-1.5 h-9 px-3.5 bg-[#003b1b] hover:bg-[#166534] text-white rounded-xl text-xs font-bold shadow-xs transition-colors self-start sm:self-auto cursor-pointer">
+              <Download className="w-3.5 h-3.5" />
               Export CSV
             </a>
-          </header>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Customers</span>
-              <p className="text-lg font-black text-slate-800 mt-1">{customers.length}</p>
-            </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Returning</span>
-              <p className="text-lg font-black text-slate-800 mt-1">{advancedAnalytics?.customerRetention?.returning || 0}</p>
-            </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Birthdays Tracked</span>
-              <p className="text-lg font-black text-slate-800 mt-1">{customers.filter(c => c.dateOfBirth).length}</p>
-            </div>
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Anniversaries</span>
-              <p className="text-lg font-black text-slate-800 mt-1">{customers.filter(c => c.anniversaryDate).length}</p>
-            </div>
           </div>
 
-          <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Metric Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {metricCards.map(({ label, value, icon: Icon, color, bg }) => (
+              <div key={label} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
+                <div className={`p-3 rounded-xl border ${bg}`}>
+                  <Icon className={`w-5 h-5 ${color}`} />
+                </div>
+                <div>
+                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">{label}</p>
+                  <p className="text-xl font-black text-slate-900 mt-0.5">{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <thead className="bg-slate-50/80 border-b border-slate-200">
                   <tr>
-                    <th className="p-3 pl-4">Customer</th>
-                    <th className="p-3">Contact</th>
-                    <th className="p-3">Visits</th>
-                    <th className="p-3">Spend</th>
-                    <th className="p-3 pr-4">Last Visit</th>
+                    {['Customer', 'Contact', 'Total Spend', 'Last Visit'].map(h => (
+                      <th key={h} className="px-5 py-3.5 text-[10.5px] font-bold text-slate-700 uppercase tracking-wider">{h}</th>
+                    ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                <tbody className="divide-y divide-slate-100 text-slate-700">
                   {customers.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="p-8 text-center text-slate-400">
-                        No customer profiles recorded yet.
-                      </td>
+                      <td colSpan="4" className="px-5 py-12 text-center text-slate-500 font-medium">No customer profiles yet.</td>
                     </tr>
                   ) : (
                     customers.map((c) => (
-                      <tr key={c._id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="p-3 pl-4 font-bold text-slate-800">{c.name || 'Guest'}</td>
-                        <td className="p-3 text-slate-500">{c.mobile || c.email || 'N/A'}</td>
-                        <td className="p-3 text-slate-800">{c.visitCount || 0}</td>
-                        <td className="p-3 text-slate-800 font-semibold">₹{c.totalSpend || 0}</td>
-                        <td className="p-3 text-slate-400 pr-4">
-                          {c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString() : '-'}
+                      <tr key={c._id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-5 py-3.5 font-bold text-slate-900">{c.name || 'Guest'}</td>
+                        <td className="px-5 py-3.5 text-slate-600 font-mono font-semibold text-xs">{c.mobile || c.email || '—'}</td>
+                        <td className="px-5 py-3.5 font-black text-emerald-700 text-sm">₹{(c.totalSpend || 0).toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-slate-500 font-medium">
+                          {c.lastVisitAt ? new Date(c.lastVisitAt).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                         </td>
                       </tr>
                     ))
@@ -82,7 +77,7 @@ export default function CrmTab({
                 </tbody>
               </table>
             </div>
-          </section>
+          </div>
         </>
       )}
     </div>

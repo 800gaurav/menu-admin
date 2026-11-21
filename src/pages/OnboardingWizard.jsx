@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
+import { optimizeMenuItemImage, optimizeLogoImage } from '../utils/imageOptimizer';
 
 export default function OnboardingWizard() {
   const [step, setStep] = useState(1);
@@ -77,29 +78,82 @@ export default function OnboardingWizard() {
     }
   };
 
+  const validateAndOptimizeLogoFile = (file) => {
+    return new Promise((resolve) => {
+      if (file.type !== 'image/png') {
+        resolve({ ok: false, error: 'Only PNG format allowed. Please convert to PNG first.' });
+        return;
+      }
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (w !== h) {
+          resolve({ ok: false, error: `Image must be square (1:1). Yours is ${w}×${h}px — please crop to square.` });
+          return;
+        }
+        if (w < 192) {
+          resolve({ ok: false, error: `Too small (${w}×${h}px). Minimum 192×192px required. Recommended: 512×512px.` });
+          return;
+        }
+
+        // Draw to exactly 512x512 canvas for perfect PWA sizing and display
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Clear background with transparency
+        ctx.clearRect(0, 0, 512, 512);
+
+        // Draw image stretched to exactly 512x512 (since it's already square, no distortion happens)
+        ctx.drawImage(img, 0, 0, 512, 512);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            resolve({ ok: false, error: 'Could not process and resize image.' });
+            return;
+          }
+          const optimizedFile = new File([blob], 'logo-512.png', { type: 'image/png' });
+          resolve({ ok: true, file: optimizedFile, width: 512, height: 512 });
+        }, 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve({ ok: false, error: 'Could not read image file.' }); };
+      img.src = url;
+    });
+  };
+
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('logo', file);
     try {
+      const optimized = await optimizeLogoImage(file);
+      const formData = new FormData();
+      formData.append('logo', optimized.file);
       const res = await api.restaurant.uploadLogo(formData);
       setBusinessProfile({ ...businessProfile, logo: res.logoUrl });
+      alert(`Optimized to 512×512px WebP (${Math.round(optimized.compressedSize / 1024)}KB) — Uploaded successfully!`);
     } catch (err) {
       alert('Error uploading logo: ' + err.message);
+    } finally {
+      e.target.value = '';
     }
   };
 
   const handleItemImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('image', file);
     try {
+      const optimized = await optimizeMenuItemImage(file);
+      const formData = new FormData();
+      formData.append('image', optimized.file);
       const res = await api.restaurant.uploadImage(formData);
       setNewItem({ ...newItem, image: res.imageUrl });
     } catch (err) {
       alert('Error uploading image: ' + err.message);
+    } finally {
+      e.target.value = '';
     }
   };
 

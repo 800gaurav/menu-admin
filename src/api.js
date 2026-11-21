@@ -5,7 +5,48 @@ export const getSuperAdminToken = () => localStorage.getItem('superadmin_token')
 export const setSuperAdminToken = (token) => localStorage.setItem('superadmin_token', token);
 export const removeSuperAdminToken = () => localStorage.removeItem('superadmin_token');
 
-export const getRestaurantToken = () => localStorage.getItem('restaurant_token');
+export const getRestaurantToken = () => {
+  const path = window.location.pathname;
+
+  // 1. If we are on the Kitchen Panel path (/kitchen/:slug)
+  if (path.includes('/kitchen/')) {
+    const slug = path.split('/kitchen/')[1]?.split('/')[0];
+    const kitchenSlug = localStorage.getItem('kitchen_slug');
+    if (kitchenSlug === slug) {
+      const kitchenToken = localStorage.getItem('kitchen_token');
+      if (kitchenToken) return kitchenToken;
+    }
+    
+    // Fallback: Check if logged in as Admin and slug matches
+    const adminSlug = localStorage.getItem('restaurant_slug');
+    if (adminSlug === slug) {
+      const adminToken = localStorage.getItem('restaurant_token');
+      if (adminToken) return adminToken;
+    }
+    
+    return localStorage.getItem('kitchen_token') || localStorage.getItem('restaurant_token');
+  }
+
+  // 2. If we are on the Counter Panel path (/counter/:slug)
+  if (path.includes('/counter/')) {
+    const slug = path.split('/counter/')[1]?.split('/')[0];
+    const adminSlug = localStorage.getItem('restaurant_slug');
+    if (adminSlug === slug) {
+      const adminToken = localStorage.getItem('restaurant_token');
+      if (adminToken) return adminToken;
+    }
+    return localStorage.getItem('restaurant_token');
+  }
+
+  // 3. If we are on the Waiter Panel path (/waiter/:slug)
+  if (path.includes('/waiter/')) {
+    return localStorage.getItem('waiter_token');
+  }
+
+  // Default: /admin dashboard
+  return localStorage.getItem('restaurant_token') || localStorage.getItem('waiter_token') || localStorage.getItem('kitchen_token');
+};
+
 export const setRestaurantToken = (token) => localStorage.setItem('restaurant_token', token);
 export const removeRestaurantToken = () => {
   localStorage.removeItem('restaurant_token');
@@ -132,6 +173,14 @@ export const api = {
       method: 'POST'
     }),
     getStats: () => apiFetch('/restaurant/dashboard/stats'),
+    getPublicProfile: async (slug) => {
+      try {
+        const res = await apiFetch(`/customer/menu/${slug}`);
+        return res?.restaurant || res;
+      } catch (e) {
+        return apiFetch('/restaurant/profile').catch(() => null);
+      }
+    },
     
     // File upload
     uploadLogo: (formData) => apiFetch('/restaurant/upload-logo', {
@@ -139,6 +188,10 @@ export const api = {
       body: formData
     }),
     uploadImage: (formData) => apiFetch('/restaurant/upload-image', {
+      method: 'POST',
+      body: formData
+    }),
+    uploadBanner: (formData) => apiFetch('/restaurant/upload-image', {
       method: 'POST',
       body: formData
     }),
@@ -155,6 +208,10 @@ export const api = {
       body: JSON.stringify({ actionButtons })
     }),
     generateQR: (data) => apiFetch('/restaurant/generate-qr', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+    changePassword: (data) => apiFetch('/restaurant/change-password', {
       method: 'POST',
       body: JSON.stringify(data)
     })
@@ -233,9 +290,13 @@ export const api = {
       return apiFetch(`/orders?${params}`);
     },
     getOrder: (id) => apiFetch(`/orders/${id}`),
-    updateStatus: (id, status) => apiFetch(`/orders/${id}/status`, {
+    updateOrder: (id, data) => apiFetch(`/orders/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+    updateStatus: (id, status, servedBy = null) => apiFetch(`/orders/${id}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status })
+      body: JSON.stringify({ status, servedBy })
     }),
     updatePriority: (id, priority) => apiFetch(`/orders/${id}/priority`, {
       method: 'PATCH',
@@ -248,7 +309,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ paymentStatus })
     }),
-    exportCsvUrl: () => `${API_BASE}/orders/export?token=${encodeURIComponent(getRestaurantToken() || '')}`,
+    exportCsvUrl: (filters = {}) => {
+      const token = getRestaurantToken() || '';
+      const cleanFilters = { token };
+      for (const k in filters) {
+        if (filters[k]) cleanFilters[k] = filters[k];
+      }
+      const params = new URLSearchParams(cleanFilters).toString();
+      return `${API_BASE}/orders/export?${params}`;
+    },
+    deleteOrder: (id) => apiFetch(`/orders/${id}`, {
+      method: 'DELETE'
+    }),
   },
 
   crm: {
@@ -292,6 +364,40 @@ export const api = {
     })
   },
 
+  // Waiters Admin Management
+  waiters: {
+    getWaiters: () => apiFetch('/waiters'),
+    createWaiter: (data) => apiFetch('/waiters', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+    updateWaiter: (id, data) => apiFetch(`/waiters/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
+    deleteWaiter: (id) => apiFetch(`/waiters/${id}`, {
+      method: 'DELETE'
+    }),
+    getPerformance: () => apiFetch('/waiters/performance')
+  },
+
+  // Kitchen Panel Endpoints
+  kitchen: {
+    getOrders: () => apiFetch('/orders?live=true'),
+    getActiveCalls: () => apiFetch('/waiter/calls').catch(() => []),
+    updateOrderStatus: (id, status, servedBy = null) => apiFetch(`/orders/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, servedBy })
+    }),
+    updatePriority: (id, priority) => apiFetch(`/orders/${id}/priority`, {
+      method: 'PATCH',
+      body: JSON.stringify({ priority })
+    }),
+    attendCall: (id) => apiFetch(`/waiter/calls/${id}/attend`, {
+      method: 'PATCH'
+    })
+  },
+
   // Counter / Billing Endpoints
   counter: {
     getOrders: () => apiFetch('/counter/orders'),
@@ -299,6 +405,18 @@ export const api = {
       method: 'POST'
     }),
     getSalesSummary: () => apiFetch('/counter/sales-summary')
+  },
+
+  notifications: {
+    registerToken: (token, role = 'restaurant') => apiFetch('/notifications/register-token', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    }, role),
+    deregisterToken: (token) => apiFetch('/notifications/deregister-token', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    })
   }
 };
 export { API_BASE };
+export default api;
