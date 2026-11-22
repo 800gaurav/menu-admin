@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import io from 'socket.io-client';
-import { api } from '../api';
+import { api, BACKEND_URL, API_BASE } from '../api';
 import {
   ChefHat, ArrowLeft, Volume2, VolumeX, Maximize2,
   CheckCircle, Bell, Clock, UtensilsCrossed, Flame, Zap, Download, LogOut,
@@ -138,7 +138,7 @@ export default function KitchenPanel() {
       const link = document.createElement('link');
       link.rel = 'manifest';
       link.crossOrigin = 'anonymous';
-      link.href = `http://localhost:5000/api/manifest/${slug}/kitchen?origin=${window.location.origin}&t=${Date.now()}`;
+      link.href = `${API_BASE}/manifest/${slug}/kitchen?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
       setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
     }
@@ -205,7 +205,7 @@ export default function KitchenPanel() {
     if (socketRef.current) socketRef.current.disconnect();
     
     // Connect to backend socket
-    const socket = io('http://localhost:5000');
+    const socket = io(BACKEND_URL);
     socketRef.current = socket;
 
     const rId = restaurantId.toString();
@@ -420,7 +420,7 @@ export default function KitchenPanel() {
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
             {restaurant?.brandingSettings?.kitchenAppLogo ? (
               <img 
-                src={restaurant.brandingSettings.kitchenAppLogo.startsWith('http') ? restaurant.brandingSettings.kitchenAppLogo : `http://localhost:5000${restaurant.brandingSettings.kitchenAppLogo}`} 
+                src={restaurant.brandingSettings.kitchenAppLogo.startsWith('http') ? restaurant.brandingSettings.kitchenAppLogo : `${BACKEND_URL}${restaurant.brandingSettings.kitchenAppLogo}`} 
                 alt="Logo" 
                 className="w-full h-full object-cover" 
               />

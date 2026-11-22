@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Trash2, ImagePlus, ShoppingCart, KeyRound, Palette, Globe, Smartphone, ShieldCheck } from 'lucide-react';
-import { api } from '../../api';
+import { api, BACKEND_URL } from '../../api';
 
 export default function SettingsTab({
   restaurant,
@@ -191,7 +191,7 @@ export default function SettingsTab({
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
                   {restaurant?.logo ? (
-                    <img src={restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`} alt="logo" className="w-full h-full object-cover" />
+                    <img src={restaurant.logo.startsWith('http') ? restaurant.logo : `${BACKEND_URL}${restaurant.logo}`} alt="logo" className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-slate-400 text-xl">🏢</span>
                   )}
@@ -221,7 +221,7 @@ export default function SettingsTab({
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
               {(restaurant?.banners || []).map((ban, idx) => (
                 <div key={idx} className="relative h-20 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 group">
-                  <img src={ban.startsWith('http') ? ban : `http://localhost:5000${ban}`} alt={`Banner ${idx}`} className="w-full h-full object-cover" />
+                  <img src={ban.startsWith('http') ? ban : `${BACKEND_URL}${ban}`} alt={`Banner ${idx}`} className="w-full h-full object-cover" />
                   <button type="button" onClick={() => setRestaurant({ ...restaurant, banners: restaurant.banners.filter((_, i) => i !== idx) })} className="absolute inset-0 bg-black/50 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -315,7 +315,7 @@ export default function SettingsTab({
             <div className="bg-white px-2.5 py-2.5 flex items-center justify-between border-b border-slate-100">
               <div className="flex items-center gap-1.5">
                 <div className="w-5 h-5 rounded-full overflow-hidden bg-[#003b1b] flex items-center justify-center text-white text-[8px] font-bold">
-                  {restaurant?.logo ? <img src={restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`} alt="L" className="w-full h-full object-cover" /> : 'S'}
+                  {restaurant?.logo ? <img src={restaurant.logo.startsWith('http') ? restaurant.logo : `${BACKEND_URL}${restaurant.logo}`} alt="L" className="w-full h-full object-cover" /> : 'S'}
                 </div>
                 <span className="font-semibold text-slate-800 truncate max-w-[80px]">{restaurant?.name || 'Restaurant'}</span>
               </div>

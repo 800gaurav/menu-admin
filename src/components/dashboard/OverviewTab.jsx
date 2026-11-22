@@ -21,6 +21,8 @@ import {
 } from 'chart.js';
 import { Line, Doughnut } from 'react-chartjs-2';
 
+const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
+
 // Register Chart.js modules
 ChartJS.register(
   CategoryScale,
@@ -257,7 +259,7 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
 
         <div className="flex items-center gap-2.5 self-start md:self-auto">
           <a
-            href={`http://localhost:5173/menu/${restaurant?.slug}`}
+            href={`${USER_URL}/menu/${restaurant?.slug}`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors cursor-pointer"

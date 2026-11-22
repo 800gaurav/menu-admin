@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import io from 'socket.io-client';
-import { api, removeRestaurantToken } from '../api';
+import { api, removeRestaurantToken, BACKEND_URL } from '../api';
+
+const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
+const WAITER_URL = (import.meta.env.VITE_WAITER_URL || window.location.origin).replace(/\/+$/, '');
 import BillPrint from './BillPrint';
 import { 
   TrendingUp, 
@@ -234,7 +237,7 @@ export default function RestaurantAdminDashboard() {
       const link = document.createElement('link');
       link.rel = 'manifest';
       link.crossOrigin = 'anonymous';
-      link.href = `http://localhost:5000/api/manifest/${restaurant.slug}/admin?origin=${window.location.origin}&t=${Date.now()}`;
+      link.href = `${BACKEND_URL}/api/manifest/${restaurant.slug}/admin?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
       setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
     }
@@ -245,7 +248,7 @@ export default function RestaurantAdminDashboard() {
         iconLink.rel = 'icon';
         document.head.appendChild(iconLink);
       }
-      iconLink.href = restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`;
+      iconLink.href = restaurant.logo.startsWith('http') ? restaurant.logo : `${BACKEND_URL}${restaurant.logo}`;
 
       let appleIconLink = document.querySelector("link[rel='apple-touch-icon']");
       if (!appleIconLink) {
@@ -420,7 +423,7 @@ export default function RestaurantAdminDashboard() {
 
   const connectSocket = (restaurantId) => {
     if (socketRef.current) socketRef.current.disconnect();
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io(BACKEND_URL);
     
     socketRef.current.on('connect', () => {
       console.log('Admin socket connected, rejoining room...');
@@ -896,7 +899,7 @@ export default function RestaurantAdminDashboard() {
           <div className="flex items-center gap-3 min-w-0">
             {restaurant?.logo ? (
               <img 
-                src={restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`} 
+                src={restaurant.logo.startsWith('http') ? restaurant.logo : `${BACKEND_URL}${restaurant.logo}`} 
                 alt="Logo" 
                 className="w-9 h-9 rounded-xl object-cover border border-slate-700/80 shrink-0 shadow-sm" 
               />
@@ -1069,7 +1072,7 @@ export default function RestaurantAdminDashboard() {
                   </div>
                 ) : restaurant?.slug ? (
                   <a 
-                    href={`http://localhost:5174/waiter/${restaurant.slug}`} 
+                    href={`${WAITER_URL}/waiter/${restaurant.slug}`} 
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setSidebarOpen(false)}
@@ -1096,7 +1099,7 @@ export default function RestaurantAdminDashboard() {
               <li>
                 {restaurant?.slug ? (
                   <a 
-                    href={`http://localhost:5173/menu/${restaurant.slug}`} 
+                    href={`${USER_URL}/menu/${restaurant.slug}`} 
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setSidebarOpen(false)}

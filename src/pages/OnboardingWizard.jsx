@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
+import { api, BACKEND_URL } from '../api';
 import { optimizeMenuItemImage, optimizeLogoImage } from '../utils/imageOptimizer';
 
 export default function OnboardingWizard() {
@@ -343,7 +343,7 @@ export default function OnboardingWizard() {
                 <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
                   {businessProfile.logo ? (
                     <img 
-                      src={businessProfile.logo.startsWith('http') ? businessProfile.logo : `http://localhost:5000${businessProfile.logo}`} 
+                      src={businessProfile.logo.startsWith('http') ? businessProfile.logo : `${BACKEND_URL}${businessProfile.logo}`} 
                       alt="Logo" 
                       className="w-24 h-24 rounded-full object-cover shadow-sm border border-slate-100 mb-4" 
                     />
@@ -711,7 +711,7 @@ export default function OnboardingWizard() {
                       <div key={idx} className="bg-white p-3 rounded-xl border border-slate-200 flex gap-3 shadow-sm relative">
                         <div className="w-16 h-16 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
                           {item.image ? (
-                            <img src={`http://localhost:5000${item.image}`} alt={item.name} className="w-full h-full object-cover" />
+                            <img src={`${BACKEND_URL}${item.image}`} alt={item.name} className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-slate-300">
                               <span className="material-symbols-outlined">fastfood</span>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
-import { api } from '../api';
+import { api, BACKEND_URL } from '../api';
 import BillPrint from './BillPrint';
 import {
   Receipt, RefreshCw, LogOut, CheckCircle, Banknote,
@@ -93,7 +93,7 @@ export default function CounterPanel() {
       const link = document.createElement('link');
       link.rel = 'manifest';
       link.crossOrigin = 'anonymous';
-      link.href = `http://localhost:5000/api/manifest/${slug}/counter?origin=${window.location.origin}&t=${Date.now()}`;
+      link.href = `${BACKEND_URL}/api/manifest/${slug}/counter?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
       setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
     }
@@ -167,7 +167,7 @@ export default function CounterPanel() {
         iconLink.rel = 'icon';
         document.head.appendChild(iconLink);
       }
-      iconLink.href = restaurant.logo.startsWith('http') ? restaurant.logo : `http://localhost:5000${restaurant.logo}`;
+      iconLink.href = restaurant.logo.startsWith('http') ? restaurant.logo : `${BACKEND_URL}${restaurant.logo}`;
 
       let appleIconLink = document.querySelector("link[rel='apple-touch-icon']");
       if (!appleIconLink) {
@@ -205,7 +205,7 @@ export default function CounterPanel() {
   const connectSocket = () => {
     const restId = localStorage.getItem('restaurant_id');
     if (!restId) return;
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io(BACKEND_URL);
     socketRef.current.on('connect', () => setIsConnected(true));
     socketRef.current.on('disconnect', () => setIsConnected(false));
     socketRef.current.emit('joinRestaurant', restId);

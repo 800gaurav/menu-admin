@@ -4,6 +4,7 @@ import {
   Filter, Tag, EyeOff, CheckCircle2, XCircle, ChevronDown,
   Layers, DollarSign, SlidersHorizontal, Sparkles
 } from 'lucide-react';
+import { BACKEND_URL } from '../../api';
 
 export default function MenuTab({
   categories = [],
@@ -326,7 +327,7 @@ export default function MenuTab({
                     <div className="h-36 sm:h-40 bg-slate-100 relative overflow-hidden">
                       {item.image ? (
                         <img
-                          src={item.image.startsWith('http') ? item.image : `http://localhost:5000${item.image}`}
+                          src={item.image.startsWith('http') ? item.image : `${BACKEND_URL}${item.image}`}
                           alt={item.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           loading="lazy"
