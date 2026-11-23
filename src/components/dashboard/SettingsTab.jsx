@@ -19,6 +19,8 @@ export default function SettingsTab({
   const [pwStatus, setPwStatus] = useState({ type: '', message: '' });
   const [pwLoading, setPwLoading] = useState(false);
   const [iconUploadStatus, setIconUploadStatus] = useState({});
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutSaveStatus, setLayoutSaveStatus] = useState({ type: '', message: '' });
 
   const [kitchenPin, setKitchenPin] = useState(restaurant?.pins?.kitchen || '1111');
   const [counterPin, setCounterPin] = useState(restaurant?.pins?.counter || '2222');
@@ -96,6 +98,23 @@ export default function SettingsTab({
       setIconUploadStatus(prev => ({ ...prev, [logoField]: { loading: false, error: null, success: `${validation.width}×${validation.height}px — Uploaded!` } }));
     } catch {
       setIconUploadStatus(prev => ({ ...prev, [logoField]: { loading: false, error: 'Upload failed.' } }));
+    }
+  };
+
+  const handleSaveMenuItemLayout = async () => {
+    const menuItemLayout = restaurant?.brandingSettings?.menuItemLayout || 'grid';
+    setLayoutSaving(true);
+    setLayoutSaveStatus({ type: '', message: '' });
+    try {
+      const updatedRestaurant = await api.restaurant.updateBranding({ menuItemLayout });
+      if (updatedRestaurant?.brandingSettings) {
+        setRestaurant((current) => ({ ...current, ...updatedRestaurant }));
+      }
+      setLayoutSaveStatus({ type: 'success', message: 'Menu layout saved.' });
+    } catch (err) {
+      setLayoutSaveStatus({ type: 'error', message: err.message || 'Could not save menu layout.' });
+    } finally {
+      setLayoutSaving(false);
     }
   };
 
@@ -266,6 +285,21 @@ export default function SettingsTab({
                   </button>
                 );
               })}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleSaveMenuItemLayout}
+                disabled={layoutSaving}
+                className="h-9 px-4 rounded-lg bg-[#003b1b] hover:bg-[#166534] text-xs font-semibold text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {layoutSaving ? 'Saving layout...' : 'Save Layout'}
+              </button>
+              {layoutSaveStatus.message && (
+                <p className={`text-xs font-semibold ${layoutSaveStatus.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`} role="status">
+                  {layoutSaveStatus.message}
+                </p>
+              )}
             </div>
           </div>
 
