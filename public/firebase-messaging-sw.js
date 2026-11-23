@@ -16,14 +16,47 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  const notificationTitle = payload.notification.title || 'Stitch Admin Panel';
+
+  // If the push message already includes a notification payload,
+  // Firebase SDK and Chrome Web Push handle the display automatically.
+  // Calling self.registration.showNotification here creates an unnecessary duplicate popup.
+  if (payload.notification) {
+    return;
+  }
+
+  const tag = (payload.data && (
+    payload.data.orderId ? `order-${payload.data.orderId}` :
+    payload.data.callId ? `call-${payload.data.callId}` :
+    payload.data.tag || payload.data.alertId
+  )) || 'menuos-alert';
+
+  const notificationTitle = payload.data?.title || 'Stitch Admin Panel';
   const notificationOptions = {
-    body: payload.notification.body || '',
-    icon: '/logo.png',
+    body: payload.data?.body || '',
+    icon: '/icon-512.png',
+    badge: '/icon-512.png',
+    tag: tag,
+    renotify: false,
     data: payload.data
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
+    })
+  );
 });
 
 // PWA Caching and Fetch Handler

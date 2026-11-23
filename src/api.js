@@ -402,6 +402,10 @@ export const api = {
   // Counter / Billing Endpoints
   counter: {
     getOrders: () => apiFetch('/counter/orders'),
+    updateGroupedOrder: (data) => apiFetch('/counter/orders/grouped', {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }),
     completeOrder: (id) => apiFetch(`/counter/orders/${id}/complete`, {
       method: 'POST'
     }),

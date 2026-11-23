@@ -20,11 +20,8 @@ export default function RestaurantAdminLogin() {
       localStorage.setItem('restaurant_id', data.restaurantId);
       localStorage.setItem('restaurant_slug', data.restaurantSlug);
       
-      if (!data.isOnboarded) {
-        navigate('/admin/wizard');
-      } else {
-        navigate('/admin');
-      }
+      // Direct navigation to admin operations dashboard without setup wizard
+      navigate('/admin');
     } catch (err) {
       setError(err.message || 'Invalid username or password');
     } finally {

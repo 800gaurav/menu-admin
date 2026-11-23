@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../../api';
 import {
-  Search, RefreshCw, Printer, Check, X,
+  Search, RefreshCw, Printer, Check, X, Eye,
   User, AlertCircle, Banknote, CreditCard, QrCode,
   Pencil, Trash2, UtensilsCrossed, Minus, Plus, Tag,
   SlidersHorizontal, Maximize2, ChefHat
@@ -15,6 +15,7 @@ export default function BillingTab({
 }) {
   const [settlingOrder, setSettlingOrder] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [viewingOrder, setViewingOrder] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [editedItems, setEditedItems] = useState([]);
   const [discountVal, setDiscountVal] = useState(0);
@@ -22,7 +23,13 @@ export default function BillingTab({
 
   React.useEffect(() => {
     if (editingOrder) {
-      setEditedItems(editingOrder.items.map(it => ({ ...it })));
+      const sourceOrders = editingOrder.orders?.length ? editingOrder.orders : [editingOrder];
+      setEditedItems(sourceOrders.flatMap(sourceOrder => (sourceOrder.items || []).map(item => ({
+        ...item,
+        sourceOrderId: String(sourceOrder._id),
+        sourceOrderNumber: sourceOrder.orderNumber,
+        sourceCreatedAt: sourceOrder.createdAt
+      }))));
       setDiscountVal(editingOrder.discount || 0);
       setAdjustmentVal(editingOrder.adjustment || 0);
     }
@@ -32,6 +39,7 @@ export default function BillingTab({
     const q = orderSearch.toLowerCase();
     const matchesSearch =
       o.tableName.toLowerCase().includes(q) ||
+      (o.customerName && o.customerName.toLowerCase().includes(q)) ||
       (o.orderNumber && o.orderNumber.toLowerCase().includes(q)) ||
       (o.customerId?.name && o.customerId.name.toLowerCase().includes(q)) ||
       (o.customerId?.mobile && o.customerId.mobile.includes(q));
@@ -123,105 +131,97 @@ export default function BillingTab({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {filteredActiveOrders.map((ord) => {
-            const billRequested = ord.billRequested;
-            const totalItems = ord.items.reduce((s, i) => s + i.quantity, 0);
+            const itemCount = ord.itemCount ?? (ord.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
             return (
-              <div
-                key={ord._id}
-                className={`bg-white rounded-2xl border flex flex-col transition-all shadow-xs hover:shadow-md ${
-                  billRequested
-                    ? 'border-amber-300 ring-2 ring-amber-200/60'
-                    : 'border-slate-200/90'
-                }`}
-              >
-                {/* ── Card Top Bar ── */}
-                <div className={`flex items-center justify-between px-3.5 py-2.5 rounded-t-2xl border-b ${
-                  billRequested ? 'bg-amber-50/80 border-amber-200' : 'bg-slate-50 border-slate-200/80'
-                }`}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-extrabold text-slate-900 text-sm truncate">{ord.tableName}</span>
-                    {ord.placedBy === 'waiter' && (
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-200 text-[9px] font-black rounded uppercase shrink-0">Waiter</span>
-                    )}
-                  </div>
-                  {billRequested ? (
-                    <span className="flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
-                      <AlertCircle className="w-3 h-3 text-amber-700" /> Bill Req
-                    </span>
-                  ) : (
-                    <span className="bg-slate-100 text-slate-800 border border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">{ord.status}</span>
-                  )}
+              <article key={ord._id} className={`overflow-hidden rounded-2xl border bg-white shadow-xs transition hover:shadow-md ${ord.billRequested ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200/90'}`}>
+                <div className={`flex items-center gap-3 border-b px-4 py-3 ${ord.billRequested ? 'border-amber-200 bg-amber-50/80' : 'border-slate-100 bg-slate-50/70'}`}>
+                  <h2 className="truncate text-sm font-extrabold text-slate-900">{ord.tableName}</h2>
                 </div>
-
-                {/* ── Card Body ── */}
-                <div className="px-3.5 py-2.5 flex-1 flex flex-col gap-2.5">
-
-                  {/* Order # + Customer inline */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-600 font-extrabold font-mono">{ord.orderNumber}</span>
-                    <span className="text-xs text-slate-700 font-semibold truncate max-w-[130px]">
-                      {ord.customerId ? `👤 ${ord.customerId.name || 'Guest'}` : '👤 Anonymous'}
-                    </span>
+                <div className="flex items-center justify-between gap-3 px-4 py-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-800">{ord.customerName || ord.customerId?.name || 'Guest'}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{itemCount} item{itemCount === 1 ? '' : 's'}</p>
                   </div>
-
-                  {/* Items list — compact */}
-                  <div className="bg-slate-50 rounded-xl border border-slate-200/80 divide-y divide-slate-100 max-h-32 overflow-y-auto">
-                    {ord.items.map((it, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 text-xs">
-                        <span className="text-slate-800 font-bold truncate max-w-[55%]">
-                          {it.name}
-                          {it.variantName && <span className="text-amber-600 ml-1 text-[10px]">({it.variantName})</span>}
-                        </span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-slate-500 font-bold">×{it.quantity}</span>
-                          <span className="font-extrabold text-slate-900">₹{it.price * it.quantity}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Special instructions */}
-                  {ord.specialInstructions && (
-                    <div className="bg-amber-50 border border-amber-200/80 rounded-xl px-2.5 py-1.5 text-xs text-amber-800 italic font-medium">
-                      📝 {ord.specialInstructions}
-                    </div>
-                  )}
-
-                  {/* Total + items count */}
-                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
-                    <span className="text-xs text-slate-500 font-bold">{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
-                    <span className="font-black text-base text-slate-950">₹{ord.totalAmount}</span>
-                  </div>
+                  <p className="shrink-0 text-xl font-black tracking-tight text-slate-950">{'\u20B9'}{Number(ord.totalAmount || 0).toLocaleString('en-IN')}</p>
                 </div>
-
-                {/* ── Card Actions ── */}
-                <div className="px-3.5 pb-3.5 flex gap-2">
-                  <button
-                    onClick={() => handleOpenPrintBilling(ord)}
-                    className="h-8 flex-1 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
-                  >
-                    <Printer className="w-3.5 h-3.5" /> Print
+                <div className="flex gap-2 px-4 pb-4">
+                  <button onClick={() => setViewingOrder(ord)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-50">
+                    <Eye className="h-3.5 w-3.5" /> View bill
                   </button>
-                  <button
-                    onClick={() => setEditingOrder(ord)}
-                    className="h-8 flex-1 rounded-xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
-                  >
-                    <Pencil className="w-3.5 h-3.5" /> Edit
-                  </button>
-                  <button
-                    onClick={() => setSettlingOrder(ord)}
-                    className="h-8 flex-1 rounded-xl bg-[#003b1b] hover:bg-[#166534] text-white text-xs font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
-                  >
-                    <Check className="w-3.5 h-3.5" /> Settle
+                  <button onClick={() => setSettlingOrder(ord)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#003b1b] text-xs font-bold text-white shadow-xs transition hover:bg-[#166534]">
+                    <Check className="h-3.5 w-3.5" /> Settle
                   </button>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
       {/* ── SETTLE DIALOG ── */}
+      {viewingOrder && (() => {
+        const sourceOrders = viewingOrder.orders?.length ? viewingOrder.orders : [viewingOrder];
+        return (
+          <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Bill details</p>
+                  <h2 className="mt-1 truncate text-lg font-extrabold text-slate-900">{viewingOrder.tableName}</h2>
+                  <p className="mt-0.5 text-xs font-medium text-slate-500">Customer: {viewingOrder.customerName || viewingOrder.customerId?.name || 'Guest'}</p>
+                  {viewingOrder.customerName !== 'Multiple guests' && viewingOrder.customerId?.mobile && <p className="mt-0.5 text-xs text-slate-500">Phone: {viewingOrder.customerId.mobile}</p>}
+                </div>
+                <button onClick={() => setViewingOrder(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label="Close bill details"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-4 sm:p-5">
+                {sourceOrders.map((sourceOrder) => (
+                  <section key={sourceOrder._id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-white px-4 py-3">
+                      <div>
+                        <p className="text-xs font-extrabold text-slate-800">Order #{sourceOrder.orderNumber || String(sourceOrder._id).slice(-6)}</p>
+                      </div>
+                      <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{new Date(sourceOrder.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100 px-4">
+                      {(sourceOrder.items || []).map((item, index) => (
+                        <div key={`${sourceOrder._id}-${item._id || index}`} className="flex items-center justify-between gap-3 py-2.5 text-xs">
+                          <div className="min-w-0">
+                            <p className="truncate font-bold text-slate-800">{item.name}{item.variantName ? ` (${item.variantName})` : ''}</p>
+                            {item.specialInstructions && <p className="mt-0.5 truncate text-[10px] text-amber-700">{item.specialInstructions}</p>}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="font-bold text-slate-700">Qty: {item.quantity}</p>
+                            <p className="text-[10px] text-slate-500">{'\u20B9'}{item.price} each</p>
+                          </div>
+                          <p className="w-20 shrink-0 text-right font-extrabold text-slate-900">{'\u20B9'}{item.price * item.quantity}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between border-t border-slate-100 bg-slate-50/70 px-4 py-2 text-[10px] font-semibold text-slate-500"><span>Order total</span><span className="text-slate-800">{'\u20B9'}{sourceOrder.totalAmount}</span></div>
+                    {sourceOrder.specialInstructions && <p className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-[10px] text-amber-800">Note: {sourceOrder.specialInstructions}</p>}
+                  </section>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
+                <div className="mb-4 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>{'\u20B9'}{viewingOrder.subtotal}</span></div>
+                  {viewingOrder.discount > 0 && <div className="flex justify-between text-rose-600"><span>Discount</span><span>-{'\u20B9'}{viewingOrder.discount}</span></div>}
+                  {viewingOrder.adjustment !== 0 && <div className="flex justify-between text-indigo-600"><span>Adjustment</span><span>{viewingOrder.adjustment > 0 ? '+' : ''}{'\u20B9'}{viewingOrder.adjustment}</span></div>}
+                  <div className="flex justify-between border-t border-slate-100 pt-2 text-sm font-extrabold text-slate-900"><span>Total bill</span><span>{'\u20B9'}{viewingOrder.totalAmount}</span></div>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button onClick={() => { handleOpenPrintBilling(viewingOrder); setViewingOrder(null); }} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"><Printer className="h-3.5 w-3.5" /> Print</button>
+                  <button onClick={() => { setEditingOrder(viewingOrder); setViewingOrder(null); }} className="inline-flex h-10 items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100"><Pencil className="h-3.5 w-3.5" /> Edit bill</button>
+                  <button onClick={() => { setSettlingOrder(viewingOrder); setViewingOrder(null); }} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#003b1b] px-4 text-xs font-bold text-white transition hover:bg-[#166534]"><Check className="h-3.5 w-3.5" /> Settle</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {settlingOrder && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-sm shadow-2xl p-5 relative text-left flex flex-col">
@@ -247,8 +247,9 @@ export default function BillingTab({
             </div>
 
             <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-1.5 text-xs mb-4">
-              <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{settlingOrder.subtotal || Math.round(settlingOrder.totalAmount / 1.05)}</span></div>
-              <div className="flex justify-between text-slate-500 border-b border-slate-200 pb-1.5"><span>Tax (5% GST)</span><span>₹{settlingOrder.taxAmount || Math.round(settlingOrder.totalAmount - settlingOrder.totalAmount / 1.05)}</span></div>
+              <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{settlingOrder.subtotal ?? settlingOrder.totalAmount}</span></div>
+              {settlingOrder.discount > 0 && <div className="flex justify-between text-rose-600"><span>Discount</span><span>-{'\u20B9'}{settlingOrder.discount}</span></div>}
+              {settlingOrder.adjustment !== 0 && <div className="flex justify-between text-indigo-600"><span>Adjustment</span><span>{settlingOrder.adjustment > 0 ? '+' : ''}{'\u20B9'}{settlingOrder.adjustment}</span></div>}
               <div className="flex justify-between text-slate-900 font-bold pt-0.5"><span>Total</span><span className="text-base">₹{settlingOrder.totalAmount}</span></div>
             </div>
 
@@ -265,15 +266,28 @@ export default function BillingTab({
         const subtotal = editedItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
         const afterDiscount = Math.max(0, subtotal - Number(discountVal || 0));
         const afterAdjustment = Math.max(0, afterDiscount + Number(adjustmentVal || 0));
-        const taxAmount = Math.round(afterAdjustment * 0.05);
-        const totalAmount = afterAdjustment + taxAmount;
+        const totalAmount = afterAdjustment;
 
         const handleSaveBillEdits = async () => {
           if (editedItems.length === 0) { alert('Bill must have at least 1 item.'); return; }
           try {
-            await api.orders.updateOrder(editingOrder._id, { items: editedItems, subtotal, taxAmount, totalAmount });
-            fetchTabData('billing');
+            const sourceOrders = editingOrder.orders?.length ? editingOrder.orders : [editingOrder];
+            const orderEdits = sourceOrders.map(sourceOrder => ({
+              orderId: String(sourceOrder._id),
+              items: editedItems
+                .filter(item => item.sourceOrderId === String(sourceOrder._id))
+                .map(({ sourceOrderId, sourceOrderNumber, sourceCreatedAt, ...item }) => item)
+            }));
+            await api.counter.updateGroupedOrder({
+              tableName: editingOrder.tableName,
+              orderIds: editingOrder.orderIds || sourceOrders.map(sourceOrder => sourceOrder._id),
+              orders: orderEdits,
+              discount: Number(discountVal) || 0,
+              adjustment: Number(adjustmentVal) || 0
+            });
+            await fetchTabData('billing');
             setEditingOrder(null);
+            setViewingOrder(null);
           } catch (err) { alert('Failed to save: ' + err.message); }
         };
 
@@ -297,25 +311,33 @@ export default function BillingTab({
                 <p className="text-xs text-slate-400 mt-0.5">{editingOrder.orderNumber}</p>
               </div>
 
-              <div className="flex-1 overflow-y-auto mb-4 divide-y divide-slate-100 max-h-52 border border-slate-100 rounded-xl">
-                {editedItems.map((it, idx) => (
-                  <div key={idx} className="flex justify-between items-center px-3 py-2 text-xs">
-                    <div className="max-w-[40%]">
-                      <span className="font-medium text-slate-700 block truncate">{it.name}</span>
-                      {it.variantName && <span className="text-[9px] text-orange-500">{it.variantName}</span>}
+              <div className="mb-4 max-h-64 flex-1 space-y-3 overflow-y-auto rounded-xl">
+                {(editingOrder.orders?.length ? editingOrder.orders : [editingOrder]).map(sourceOrder => (
+                  <section key={sourceOrder._id} className="overflow-hidden rounded-xl border border-slate-200">
+                    <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
+                      <p className="text-[11px] font-bold text-slate-700">Order #{sourceOrder.orderNumber || String(sourceOrder._id).slice(-6)}</p>
+                      <p className="mt-0.5 text-[9px] text-slate-500">{new Date(sourceOrder.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
-                        <button type="button" onClick={() => updateQty(idx, -1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer"><Minus className="w-3 h-3" /></button>
-                        <span className="px-2 font-semibold text-slate-800 text-[11px]">{it.quantity}</span>
-                        <button type="button" onClick={() => updateQty(idx, 1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer"><Plus className="w-3 h-3" /></button>
-                      </div>
-                      <span className="font-semibold text-slate-800 w-14 text-right">₹{it.price * it.quantity}</span>
-                      <button type="button" onClick={() => { const n = [...editedItems]; n.splice(idx, 1); setEditedItems(n); }} className="text-rose-400 hover:text-rose-600 cursor-pointer p-1">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="divide-y divide-slate-100 bg-white">
+                      {editedItems.map((it, idx) => it.sourceOrderId !== String(sourceOrder._id) ? null : (
+                        <div key={`${sourceOrder._id}-${it._id || idx}`} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate font-medium text-slate-700">{it.name}</span>
+                            {it.variantName && <span className="text-[9px] text-orange-500">{it.variantName}</span>}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                              <button type="button" onClick={() => updateQty(idx, -1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100"><Minus className="h-3 w-3" /></button>
+                              <span className="px-2 text-[11px] font-semibold text-slate-800">{it.quantity}</span>
+                              <button type="button" onClick={() => updateQty(idx, 1)} className="px-2 py-1.5 text-slate-500 hover:bg-slate-100"><Plus className="h-3 w-3" /></button>
+                            </div>
+                            <span className="w-14 text-right font-semibold text-slate-800">{'\u20B9'}{it.price * it.quantity}</span>
+                            <button type="button" onClick={() => { const next = [...editedItems]; next.splice(idx, 1); setEditedItems(next); }} className="p-1 text-rose-400 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  </section>
                 ))}
               </div>
 
@@ -334,7 +356,6 @@ export default function BillingTab({
                 <div className="flex justify-between text-slate-500"><span>Subtotal</span><span>₹{subtotal}</span></div>
                 {Number(discountVal) > 0 && <div className="flex justify-between text-rose-500 font-medium"><span>Discount</span><span>-₹{discountVal}</span></div>}
                 {Number(adjustmentVal) !== 0 && <div className="flex justify-between text-indigo-500 font-medium"><span>Adjustment</span><span>{Number(adjustmentVal) > 0 ? '+' : ''}₹{adjustmentVal}</span></div>}
-                <div className="flex justify-between text-slate-500"><span>Tax (5% GST)</span><span>₹{taxAmount}</span></div>
                 <div className="flex justify-between text-slate-900 font-bold border-t border-slate-200 pt-1.5"><span>New Total</span><span className="text-base">₹{totalAmount}</span></div>
               </div>
 

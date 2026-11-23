@@ -25,6 +25,34 @@ function formatDateToYMD(date) {
   return `${year}-${month}-${day}`;
 }
 
+// Helper: Format Date & Time in Indian Standard Time (IST)
+function formatIndianDateTime(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+function formatIndianTimeOnly(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
 export default function BillingHistoryTab({
   tables = [],
   handleOpenPrintBilling
@@ -113,17 +141,28 @@ export default function BillingHistoryTab({
       const res = await api.orders.getOrders(params);
 
       if (res && res.orders) {
-        setOrders(res.orders);
+        // Ensure the most recently settled table is at the top
+        const sorted = [...res.orders].sort((a, b) => {
+          const tA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
+          const tB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
+          return tB - tA;
+        });
+        setOrders(sorted);
         setTotalCount(res.totalCount || 0);
         setTotalPages(res.totalPages || 1);
         setCurrentPage(res.currentPage || pageToLoad);
         setTotalRevenue(res.totalRevenue !== undefined ? res.totalRevenue : 0);
       } else if (Array.isArray(res)) {
-        setOrders(res);
-        setTotalCount(res.length);
+        const sorted = [...res].sort((a, b) => {
+          const tA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
+          const tB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
+          return tB - tA;
+        });
+        setOrders(sorted);
+        setTotalCount(sorted.length);
         setTotalPages(1);
         setCurrentPage(1);
-        const sum = res.filter(o => o.status !== 'Cancelled').reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+        const sum = sorted.filter(o => o.status !== 'Cancelled').reduce((acc, o) => acc + (o.totalAmount || 0), 0);
         setTotalRevenue(sum);
       } else {
         setOrders([]);
@@ -193,67 +232,69 @@ export default function BillingHistoryTab({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* Header */}
-      <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Receipt className="w-6 h-6 text-emerald-700 shrink-0" />
-            Billing Order History Log
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-            Search and audit completed or settled invoices.
-          </p>
+      {/* Header Top Bar */}
+      <header className="flex items-center justify-between gap-2 bg-white px-3 sm:px-5 py-2.5 sm:py-3.5 rounded-2xl border border-slate-200 shadow-xs">
+        {/* Title */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-700 shrink-0">
+            <Receipt className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-lg font-black text-slate-900 tracking-tight truncate">
+              Order History
+            </h1>
+            <p className="text-[10px] sm:text-xs text-slate-400 font-medium hidden sm:block">
+              Search and audit completed or settled invoices.
+            </p>
+          </div>
         </div>
 
-        {/* Right side: Total Sales / Revenue Badge + Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end">
-          {/* Total Sales / Revenue Badge */}
-          <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200/90 px-3.5 py-1.5 rounded-xl shadow-2xs">
-            <div className="w-7 h-7 rounded-lg bg-emerald-600 flex items-center justify-center text-white shrink-0 shadow-xs">
-              <TrendingUp className="w-4 h-4" />
-            </div>
+        {/* Right side: Total Sales / Revenue Badge + Action Buttons in one row */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Total Sales Badge */}
+          <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200/90 px-2 sm:px-3 py-1 sm:py-1.5 rounded-xl shadow-2xs">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-600 hidden xs:block shrink-0" />
             <div>
-              <span className="text-[9.5px] text-emerald-700 font-extrabold uppercase tracking-wider block leading-tight">
-                Total Sales
+              <span className="text-[8.5px] sm:text-[9.5px] text-emerald-700 font-extrabold uppercase tracking-wider block leading-tight">
+                Sales
               </span>
-              <span className="text-sm sm:text-base font-black text-emerald-950 leading-tight block">
+              <span className="text-xs sm:text-sm font-black text-emerald-950 leading-tight block">
                 ₹{Number(totalRevenue || 0).toLocaleString('en-IN')}
               </span>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => fetchOrders(currentPage)}
-              disabled={loading}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-              title="Refresh current page"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">Refresh</span>
-            </button>
-            
-            <a
-              href={getExportUrl()}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer"
-              title="Export filtered records to CSV"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-300" />
-              <span>Export CSV</span>
-            </a>
-          </div>
+          {/* Refresh Button */}
+          <button
+            onClick={() => fetchOrders(currentPage)}
+            disabled={loading}
+            className="h-8 w-8 sm:h-9 sm:w-auto sm:px-3 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+            title="Refresh current page"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">Refresh</span>
+          </button>
+          
+          {/* Export CSV Button */}
+          <a
+            href={getExportUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="h-8 px-2.5 sm:h-9 sm:px-3.5 flex items-center justify-center gap-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] sm:text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            title="Export filtered records to CSV"
+          >
+            <Download className="w-3.5 h-3.5 text-slate-300" />
+            <span>Export CSV</span>
+          </a>
         </div>
       </header>
 
       {/* Filter & Controls Card */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 sm:gap-3 items-center">
-          {/* Search Input */}
-          <div className="lg:col-span-5 flex items-center bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 focus-within:border-emerald-600 focus-within:bg-white transition-all shadow-2xs">
-            <Search className="w-4 h-4 text-slate-400 mr-2 shrink-0" />
+      <div className="bg-white p-2.5 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2 sm:space-y-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 sm:gap-2.5 items-center">
+          {/* Search Input (Full width on mobile, 5 cols on desktop) */}
+          <div className="col-span-2 sm:col-span-6 lg:col-span-5 flex items-center bg-slate-50 px-2.5 py-1.5 sm:py-2 rounded-xl border border-slate-200 focus-within:border-emerald-600 focus-within:bg-white transition-all shadow-2xs">
+            <Search className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
             <input
               type="text"
               className="bg-transparent border-none outline-none focus:ring-0 w-full text-xs font-semibold text-slate-800 placeholder-slate-400"
@@ -272,28 +313,28 @@ export default function BillingHistoryTab({
             )}
           </div>
           
-          {/* Table / Room Filter */}
-          <div className="lg:col-span-3">
+          {/* Table / Room Filter (1 col on mobile, 3 cols on desktop) */}
+          <div className="col-span-1 sm:col-span-3">
             <select
-              className="h-9 w-full px-3 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors"
+              className="h-8 sm:h-9 w-full px-2.5 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[11px] sm:text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors"
               value={tableFilter}
               onChange={(e) => setTableFilter(e.target.value)}
             >
-              <option value="">All Tables/Rooms</option>
+              <option value="">All Tables</option>
               {tables.map(tOption => (
                 <option key={tOption._id} value={tOption.name}>{tOption.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Date Filter Preset Dropdown */}
-          <div className="lg:col-span-4">
+          {/* Date Filter Preset Dropdown (1 col on mobile, 3/4 cols on desktop) */}
+          <div className="col-span-1 sm:col-span-3 lg:col-span-4">
             <div className="relative">
-              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+              <div className="absolute inset-y-0 left-2.5 flex items-center pointer-events-none text-slate-400">
                 <Calendar className="w-3.5 h-3.5 text-emerald-700" />
               </div>
               <select
-                className="h-9 w-full pl-8 pr-3 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors"
+                className="h-8 sm:h-9 w-full pl-7 pr-2.5 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[11px] sm:text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors truncate"
                 value={datePreset}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -304,12 +345,12 @@ export default function BillingHistoryTab({
                   }
                 }}
               >
-                <option value="all">📅 Date: All Time</option>
+                <option value="all">Date: All Time</option>
                 <option value="today">Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="7days">Last 7 Days</option>
                 <option value="month">This Month</option>
-                <option value="custom">Custom Date Range...</option>
+                <option value="custom">Custom Date...</option>
               </select>
             </div>
           </div>
@@ -317,11 +358,11 @@ export default function BillingHistoryTab({
 
         {/* Custom Date Range Picker (Only visible when Custom is active) */}
         {(datePreset === 'custom' || startDate || endDate) && (
-          <div className="pt-2.5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-2.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/80">
+          <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center gap-2 bg-slate-50/70 p-2 sm:p-2.5 rounded-xl border border-slate-200/80">
             <span className="text-[11px] font-bold text-slate-600 shrink-0 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" /> Date Range:
+              <Calendar className="w-3.5 h-3.5 text-slate-500" /> Range:
             </span>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 w-full sm:w-auto">
               <input
                 type="date"
                 value={startDate}
@@ -329,7 +370,7 @@ export default function BillingHistoryTab({
                   setStartDate(e.target.value);
                   setDatePreset('custom');
                 }}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 shadow-2xs"
+                className="h-7 sm:h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11px] sm:text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 shadow-2xs flex-1 sm:flex-initial"
                 placeholder="From Date"
               />
               <span className="text-slate-400 font-bold text-xs">to</span>
@@ -340,7 +381,7 @@ export default function BillingHistoryTab({
                   setEndDate(e.target.value);
                   setDatePreset('custom');
                 }}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 shadow-2xs"
+                className="h-7 sm:h-8 px-2 rounded-lg border border-slate-200 bg-white text-[11px] sm:text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 shadow-2xs flex-1 sm:flex-initial"
                 placeholder="To Date"
               />
             </div>
@@ -351,9 +392,9 @@ export default function BillingHistoryTab({
                   setStartDate('');
                   setEndDate('');
                 }}
-                className="text-[11px] text-rose-600 font-bold hover:underline cursor-pointer flex items-center gap-1 sm:ml-auto"
+                className="text-[10px] sm:text-[11px] text-rose-600 font-bold hover:underline cursor-pointer flex items-center gap-1 sm:ml-auto"
               >
-                <X className="w-3.5 h-3.5" /> Clear Date Filter
+                <X className="w-3.5 h-3.5" /> Clear
               </button>
             )}
           </div>
@@ -363,26 +404,26 @@ export default function BillingHistoryTab({
       {/* Main Historical Table Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         {/* Table Subheader with Status Pills & Count */}
-        <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-emerald-700" />
-            <span className="font-extrabold text-xs sm:text-sm text-slate-900">Historical Invoices</span>
-            <span className="text-[11px] font-bold text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full">
-              {totalCount} orders
+        <div className="px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-100 bg-slate-50/50 flex flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Receipt className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+            <span className="font-extrabold text-xs sm:text-sm text-slate-900 truncate">Invoices</span>
+            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.2 rounded-full shrink-0">
+              {totalCount}
             </span>
           </div>
 
           {/* Status Subtabs (Only Settled / Paid or Cancelled) */}
-          <div className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-bold overflow-x-auto">
+          <div className="flex gap-0.5 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold shrink-0">
             {[
-              { id: 'all', label: 'All History' },
-              { id: 'completed', label: 'Settled / Paid' },
+              { id: 'all', label: 'All' },
+              { id: 'completed', label: 'Settled' },
               { id: 'cancelled', label: 'Cancelled' }
             ].map(subTab => (
               <button
                 key={subTab.id}
                 onClick={() => setStatusTab(subTab.id)}
-                className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors font-bold ${
+                className={`px-2 sm:px-2.5 py-1 rounded-md cursor-pointer transition-colors font-bold ${
                   statusTab === subTab.id
                     ? 'bg-[#003b1b] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
@@ -429,7 +470,7 @@ export default function BillingHistoryTab({
               <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10.5px] tracking-wider">
                 <tr>
                   <th className="p-3.5 pl-5">Table / Room</th>
-                  <th className="p-3.5">Date & Time</th>
+                  <th className="p-3.5">Settled Date & Time (IST)</th>
                   <th className="p-3.5">Customer Details</th>
                   <th className="p-3.5">Items Summary</th>
                   <th className="p-3.5">Status</th>
@@ -450,8 +491,15 @@ export default function BillingHistoryTab({
                         </span>
                       )}
                     </td>
-                    <td className="p-3.5 text-slate-600 font-medium text-[11px] whitespace-nowrap">
-                      {new Date(ord.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                    <td className="p-3.5 text-slate-700 font-semibold text-[11px] whitespace-nowrap">
+                      <span className="block text-slate-900 font-bold">
+                        {formatIndianDateTime(ord.completedAt || ord.updatedAt || ord.createdAt)}
+                      </span>
+                      {ord.createdAt && ord.completedAt && (
+                        <span className="text-[10px] text-slate-400 block font-medium">
+                          Ordered: {formatIndianTimeOnly(ord.createdAt)}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3.5">
                       {ord.customerId ? (

@@ -4,7 +4,7 @@ import io from 'socket.io-client';
 import { api, BACKEND_URL, API_BASE } from '../api';
 import {
   ChefHat, ArrowLeft, Volume2, VolumeX, Maximize2,
-  CheckCircle, Bell, Clock, UtensilsCrossed, Flame, Zap, Download, LogOut,
+  Clock, UtensilsCrossed, Flame, Zap, Download, LogOut,
   SlidersHorizontal, CheckCheck, RefreshCw, AlertTriangle, Layers
 } from 'lucide-react';
 import { requestFirebaseNotificationPermission } from '../firebase';
@@ -105,7 +105,6 @@ export default function KitchenPanel() {
     };
   }, []);
 
-  const [calls, setCalls] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -211,14 +210,16 @@ export default function KitchenPanel() {
     const rId = restaurantId.toString();
 
     socket.on('connect', () => {
-      console.log('Kitchen socket connected, joining rooms for:', rId);
+      console.log('Kitchen socket connected, joining room for:', rId);
       socket.emit('joinKitchen', rId);
-      socket.emit('joinRestaurant', rId);
-      socket.emit('join-restaurant', rId);
     });
 
+    const handledOrderIds = new Set();
     const handleNewOrder = (order) => {
-      if (!order) return;
+      if (!order || !order._id) return;
+      if (handledOrderIds.has(order._id)) return;
+      handledOrderIds.add(order._id);
+      setTimeout(() => handledOrderIds.delete(order._id), 6000);
       console.log('Kitchen received new order:', order.orderNumber, order.tableName);
       playChime();
       setOrders(prev => {
@@ -250,27 +251,15 @@ export default function KitchenPanel() {
     socket.on('orderUpdated', handleOrderUpdated);
     socket.on('order-updated', handleOrderUpdated);
 
-    socket.on('orderDeleted', (orderId) => {
-      setOrders(prev => prev.filter(o => o._id !== orderId));
-    });
-
-    const handleWaiterCall = (callData) => {
-      if (!callData) return;
-      playChime();
-      setCalls(prev => {
-        const exists = prev.some(c => c._id === callData._id);
-        if (exists) return prev;
-        return [callData, ...prev];
-      });
+    const handleOrderDeleted = (orderId) => {
+      if (!orderId) return;
+      const idStr = String(orderId);
+      setOrders(prev => prev.filter(o => String(o._id) !== idStr));
     };
 
-    socket.on('waiterCalled', handleWaiterCall);
-    socket.on('call-waiter', handleWaiterCall);
+    socket.on('orderDeleted', handleOrderDeleted);
+    socket.on('order-deleted', handleOrderDeleted);
 
-    socket.on('waiterCallAttended', (callData) => {
-      if (!callData) return;
-      setCalls(prev => prev.filter(c => c._id !== callData._id));
-    });
   };
 
   const fetchInitialData = async () => {
@@ -304,13 +293,6 @@ export default function KitchenPanel() {
         console.error('Failed to get kitchen orders:', err);
       }
 
-      try {
-        const activeCalls = await api.kitchen.getActiveCalls();
-        setCalls(Array.isArray(activeCalls) ? activeCalls : []);
-      } catch (err) {
-        console.warn('Failed to get active calls:', err);
-      }
-
       const targetRestId = profile?._id || storedRestId;
       if (targetRestId) {
         connectSocket(targetRestId);
@@ -337,15 +319,6 @@ export default function KitchenPanel() {
       setOrders(prev => prev.map(o => o._id === orderId ? { ...o, priority: newPriority } : o));
     } catch (err) {
       alert('Error updating priority: ' + err.message);
-    }
-  };
-
-  const handleAttendCall = async (callId) => {
-    try {
-      await api.kitchen.attendCall(callId);
-      setCalls(prev => prev.filter(c => c._id !== callId));
-    } catch (err) {
-      alert('Error attending call');
     }
   };
 
@@ -405,6 +378,30 @@ export default function KitchenPanel() {
         <ChefHat className="w-12 h-12 text-amber-500 animate-bounce mb-3" />
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-3"></div>
         <p className="text-slate-300 text-sm font-bold tracking-wide">Connecting Kitchen Display...</p>
+      </div>
+    );
+  }
+
+  if (restaurant?.features && restaurant.features.kitchenPanel === false) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 text-center font-sans">
+        <div className="w-16 h-16 rounded-3xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-4 text-3xl">
+          🚫
+        </div>
+        <h2 className="text-xl font-black mb-2">Kitchen Display (KDS) Not Included</h2>
+        <p className="text-slate-400 text-sm max-w-sm mb-6">
+          The Kitchen Panel is not enabled in {restaurant.name || 'this restaurant'}'s current subscription plan.
+        </p>
+        <button
+          onClick={() => {
+            localStorage.removeItem('kitchen_token');
+            localStorage.removeItem('kitchen_slug');
+            navigate(`/kitchen/${slug}/login`);
+          }}
+          className="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-200 hover:bg-slate-700 font-bold text-xs cursor-pointer"
+        >
+          Back to Login
+        </button>
       </div>
     );
   }
@@ -597,7 +594,7 @@ export default function KitchenPanel() {
                         key={order._id}
                         draggable
                         onDragStart={(e) => onDragStart(e, order._id)}
-                        className={`rounded-2xl border bg-white p-3.5 sm:p-4 shadow-xs hover:shadow-md cursor-grab active:cursor-grabbing transition-all ${PRIORITY_STYLE[priority]} ${
+                        className={`rounded-2xl border bg-white p-2.5 sm:p-3 shadow-xs hover:shadow-md cursor-grab active:cursor-grabbing transition-all ${PRIORITY_STYLE[priority]} ${
                           isUrgent
                             ? 'ring-2 ring-rose-500/80 bg-rose-50/30'
                             : isWarning
@@ -606,7 +603,7 @@ export default function KitchenPanel() {
                         }`}
                       >
                         {/* Card Header: Table + Time + Priority */}
-                        <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                        <div className="flex items-start justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100">
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               {PRIORITY_ICON[priority]}
@@ -619,8 +616,11 @@ export default function KitchenPanel() {
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] font-mono text-slate-500 font-bold block mt-0.5">
+                            <span className="text-[10px] font-mono text-slate-500 font-bold block mt-0.5">
                               {order.orderNumber || `Order #${order._id?.slice(-4)}`}
+                            </span>
+                            <span className="text-[10px] text-slate-600 font-semibold block mt-0.5">
+                              Customer: {order.customerId?.name || (order.placedBy === 'waiter' ? 'Guest' : order.customerName) || 'Guest'}
                             </span>
                           </div>
 
@@ -638,9 +638,9 @@ export default function KitchenPanel() {
                         </div>
 
                         {/* Items List */}
-                        <div className="space-y-2 mb-3.5">
+                        <div className="space-y-1 mb-2">
                           {order.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between items-start text-xs sm:text-sm gap-2 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            <div key={idx} className="flex justify-between items-start text-xs gap-2 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100">
                               <div className="min-w-0">
                                 <span className="text-slate-900 font-bold leading-tight block">
                                   {it.name}
@@ -660,13 +660,13 @@ export default function KitchenPanel() {
 
                         {/* Special Diner Notes / Instructions */}
                         {order.specialInstructions && (
-                          <div className="mb-3.5 bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-800 font-semibold leading-relaxed">
+                          <div className="mb-2 bg-amber-50 border border-amber-200 rounded-xl px-2 py-1.5 text-xs text-amber-800 font-semibold leading-relaxed">
                             📝 Note: {order.specialInstructions}
                           </div>
                         )}
 
                         {/* Action Bar (Mobile-Friendly Touch Targets) */}
-                        <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center gap-2">
                           {/* Priority dropdown */}
                           <select
                             value={priority}
@@ -703,21 +703,6 @@ export default function KitchenPanel() {
                               Mark Served ✓
                             </button>
                           )}
-
-                          {/* Quick Complete shortcut */}
-                          {order.status !== 'Ready' && (
-                            <button
-                              onClick={async () => {
-                                if (await showConfirm(`Complete order for ${order.tableName} directly?`)) {
-                                  updateStatus(order._id, 'Completed');
-                                }
-                              }}
-                              className="h-10 w-10 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 hover:text-slate-900 rounded-xl flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                              title="Direct Complete"
-                            >
-                              <CheckCircle className="w-4.5 h-4.5 text-emerald-600" />
-                            </button>
-                          )}
                         </div>
                       </article>
                     );
@@ -728,32 +713,6 @@ export default function KitchenPanel() {
           );
         })}
       </main>
-
-      {/* ── Waiter Call Alerts Toast Stack ── */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none w-72 sm:w-80">
-        {calls.map((call) => (
-          <div
-            key={call._id}
-            className="bg-slate-900 border border-rose-500/50 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 pointer-events-auto ring-1 ring-rose-500/30 animate-bounce"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
-                <Bell className="w-4.5 h-4.5 text-rose-400 animate-wiggle" />
-              </div>
-              <div>
-                <h4 className="font-black text-xs text-white">{call.tableLabel} — Service Alert</h4>
-                <p className="text-[10px] text-slate-400 mt-0.5">Waiter requested at table</p>
-              </div>
-            </div>
-            <button
-              onClick={() => handleAttendCall(call._id)}
-              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-black cursor-pointer transition-colors shrink-0"
-            >
-              OK
-            </button>
-          </div>
-        ))}
-      </div>
 
       {/* ── Prepared Order History Modal (Mobile-Responsive Bottom-Sheet) ── */}
       {showHistory && (

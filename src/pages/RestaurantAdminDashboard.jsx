@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import io from 'socket.io-client';
 import { api, removeRestaurantToken, BACKEND_URL } from '../api';
 
+const ADMIN_URL = (import.meta.env.VITE_ADMIN_URL || window.location.origin).replace(/\/+$/, '');
 const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
 const WAITER_URL = (import.meta.env.VITE_WAITER_URL || window.location.origin).replace(/\/+$/, '');
 import BillPrint from './BillPrint';
@@ -50,6 +51,41 @@ import CategoryModal from '../components/dashboard/CategoryModal';
 import MenuItemModal from '../components/dashboard/MenuItemModal';
 import TableModal from '../components/dashboard/TableModal';
 import BulkPriceModal from '../components/dashboard/BulkPriceModal';
+
+// Robust helper to merge incoming order updates without dropping populated customer/waiter objects
+const mergeOrderData = (existingOrder, incomingOrder) => {
+  if (!existingOrder) return incomingOrder;
+  if (!incomingOrder) return existingOrder;
+
+  // Resolve customer: prioritize populated object with name, fallback to existing then incoming
+  let resolvedCustomer = incomingOrder.customerId;
+  const existingCust = existingOrder.customerId;
+  if (existingCust && typeof existingCust === 'object' && existingCust.name) {
+    if (!resolvedCustomer || typeof resolvedCustomer === 'string' || !resolvedCustomer.name) {
+      resolvedCustomer = existingCust;
+    }
+  }
+
+  const customerName = incomingOrder.customerName || existingOrder.customerName || (typeof resolvedCustomer === 'object' ? resolvedCustomer?.name : '');
+  const customerMobile = incomingOrder.customerMobile || existingOrder.customerMobile || (typeof resolvedCustomer === 'object' ? resolvedCustomer?.mobile : '');
+
+  let resolvedWaiter = incomingOrder.waiterId;
+  const existingWaiter = existingOrder.waiterId;
+  if (existingWaiter && typeof existingWaiter === 'object' && (existingWaiter.name || existingWaiter.waiterName)) {
+    if (!resolvedWaiter || typeof resolvedWaiter === 'string' || (!resolvedWaiter.name && !resolvedWaiter.waiterName)) {
+      resolvedWaiter = existingWaiter;
+    }
+  }
+
+  return {
+    ...existingOrder,
+    ...incomingOrder,
+    customerId: resolvedCustomer,
+    customerName,
+    customerMobile,
+    waiterId: resolvedWaiter
+  };
+};
 
 export default function RestaurantAdminDashboard() {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('adminActiveTab') || 'overview');
@@ -108,7 +144,6 @@ export default function RestaurantAdminDashboard() {
     };
   }, []);
   const [stats, setStats] = useState({
-    totalTables: 0,
     todayOrdersCount: 0,
     todayRevenue: 0,
     activeOrdersCount: 0
@@ -177,6 +212,7 @@ export default function RestaurantAdminDashboard() {
   });
   const loadedTabs = useRef(new Set());
   const socketRef = useRef(null);
+  const handledNewOrderIdsRef = useRef(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -290,12 +326,8 @@ export default function RestaurantAdminDashboard() {
 
       if (profile) {
         try {
-          const [statsData, historyList] = await Promise.all([
-            api.restaurant.getStats(),
-            api.orders.getOrders({ limit: 200 })
-          ]);
+          const statsData = await api.restaurant.getStats();
           setStats(statsData);
-          setHistoryOrders(historyList);
         } catch (err) {
           console.error('Failed to load dashboard stats:', err);
         }
@@ -322,12 +354,8 @@ export default function RestaurantAdminDashboard() {
         setTabLoading(true);
       }
       if (tab === 'overview') {
-        const [statsData, historyList] = await Promise.all([
-          api.restaurant.getStats(),
-          api.orders.getOrders({ limit: 200 })
-        ]);
+        const statsData = await api.restaurant.getStats();
         setStats(statsData);
-        setHistoryOrders(historyList);
       } else if (tab === 'orders') {
         const data = await api.orders.getOrders({ live: 'true' });
         setOrders(data);
@@ -432,26 +460,36 @@ export default function RestaurantAdminDashboard() {
     });
 
     socketRef.current.on('orderCreated', (newOrder) => {
+      const orderId = newOrder?._id ? String(newOrder._id) : null;
+      if (orderId && handledNewOrderIdsRef.current.has(orderId)) return;
+      if (orderId) {
+        handledNewOrderIdsRef.current.add(orderId);
+        setTimeout(() => handledNewOrderIdsRef.current.delete(orderId), 6000);
+      }
+
       setOrders((prev) => {
         const exists = prev.some(o => o._id === newOrder._id);
-        if (exists) return prev.map(o => o._id === newOrder._id ? newOrder : o);
+        if (exists) return prev.map(o => o._id === newOrder._id ? mergeOrderData(o, newOrder) : o);
         return [newOrder, ...prev];
       });
       
+      // Only add to Cashier/Billing tab if the order is already Served
       setBillingOrders((prev) => {
-        if (newOrder.status !== 'Completed' && newOrder.status !== 'Cancelled') {
+        if (newOrder.status === 'Served') {
           const exists = prev.some(o => o._id === newOrder._id);
-          if (exists) return prev.map(o => o._id === newOrder._id ? newOrder : o);
+          if (exists) return prev.map(o => o._id === newOrder._id ? mergeOrderData(o, newOrder) : o);
           return [newOrder, ...prev].sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt));
         }
         return prev;
       });
 
-      setHistoryOrders((prev) => {
-        const exists = prev.some(o => o._id === newOrder._id);
-        if (exists) return prev.map(o => o._id === newOrder._id ? newOrder : o);
-        return [newOrder, ...prev].slice(0, 200);
-      });
+      if (newOrder.status === 'Completed' || newOrder.status === 'Cancelled') {
+        setHistoryOrders((prev) => {
+          const exists = prev.some(o => o._id === newOrder._id);
+          if (exists) return prev.map(o => o._id === newOrder._id ? mergeOrderData(o, newOrder) : o);
+          return [newOrder, ...prev].slice(0, 200);
+        });
+      }
 
       // Show floating notification banner
       setNewOrderToast(newOrder);
@@ -466,41 +504,57 @@ export default function RestaurantAdminDashboard() {
     });
 
     socketRef.current.on('orderUpdated', (updatedOrder) => {
-      setOrders((prev) => prev.map(o => o._id === updatedOrder._id ? updatedOrder : o));
+      setOrders((prev) => prev.map(o => o._id === updatedOrder._id ? mergeOrderData(o, updatedOrder) : o));
       
+      // Billing/Cashier tab strictly holds orders whose status is 'Served'
       setBillingOrders((prev) => {
-        if (updatedOrder.status === 'Completed' || updatedOrder.status === 'Cancelled') {
-          return prev.filter(o => o._id !== updatedOrder._id);
-        } else {
+        if (updatedOrder.status === 'Served') {
           const exists = prev.some(o => o._id === updatedOrder._id);
           if (exists) {
-            return prev.map(o => o._id === updatedOrder._id ? updatedOrder : o)
+            return prev.map(o => o._id === updatedOrder._id ? mergeOrderData(o, updatedOrder) : o)
                        .sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt));
           } else {
             return [updatedOrder, ...prev].sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt));
           }
+        } else {
+          return prev.filter(o => o._id !== updatedOrder._id);
         }
       });
 
-      setHistoryOrders((prev) => {
-        const exists = prev.some(o => o._id === updatedOrder._id);
-        if (exists) {
-          return prev.map(o => o._id === updatedOrder._id ? updatedOrder : o);
-        } else {
-          return [updatedOrder, ...prev].slice(0, 200);
-        }
-      });
+      if (updatedOrder.status === 'Completed' || updatedOrder.status === 'Cancelled') {
+        setHistoryOrders((prev) => {
+          const exists = prev.some(o => o._id === updatedOrder._id);
+          const list = exists
+            ? prev.map(o => o._id === updatedOrder._id ? mergeOrderData(o, updatedOrder) : o)
+            : [updatedOrder, ...prev];
+          return list
+            .sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt) - new Date(a.completedAt || a.updatedAt || a.createdAt))
+            .slice(0, 200);
+        });
+      }
 
       refreshStats();
       refreshBillingSummary();
     });
 
-    socketRef.current.on('orderDeleted', (orderId) => {
-      setOrders((prev) => prev.filter(o => o._id !== orderId));
-      setBillingOrders((prev) => prev.filter(o => o._id !== orderId));
-      setHistoryOrders((prev) => prev.filter(o => o._id !== orderId));
+    const handleOrderDeleted = (orderId) => {
+      if (!orderId) return;
+      const idStr = String(orderId);
+      setOrders((prev) => prev.filter(o => String(o._id) !== idStr));
+      setBillingOrders((prev) => prev.filter(o => String(o._id) !== idStr));
+      setHistoryOrders((prev) => prev.filter(o => String(o._id) !== idStr));
       refreshStats();
       refreshBillingSummary();
+      api.tables.getTables().then(setTables).catch(() => {});
+    };
+
+    socketRef.current.on('orderDeleted', handleOrderDeleted);
+    socketRef.current.on('order-deleted', handleOrderDeleted);
+
+    socketRef.current.on('waiterCalled', refreshStats);
+    socketRef.current.on('waiterCallAttended', refreshStats);
+    socketRef.current.on('counterBillUpdated', () => {
+      api.counter.getOrders().then(setBillingOrders).catch((err) => console.error(err));
     });
   };
 
@@ -675,14 +729,16 @@ export default function RestaurantAdminDashboard() {
 
   // --- Integrated Counter Billing Handlers ---
   const handleSettleBillingOrder = async (orderId) => {
-    if (!await showConfirm('Settle billing for this order and mark as Completed?')) return;
     try {
       await api.counter.completeOrder(orderId);
       setBillingOrders((prev) => prev.filter(o => o._id !== orderId));
       refreshBillingSummary();
-      // Refresh the history list too to show the newly completed order
-      const historyList = await api.orders.getOrders({ limit: 200 });
-      setHistoryOrders(historyList);
+      // Refresh the history list too to show the newly completed order at the top
+      const historyList = await api.orders.getOrders({ limit: 200, history: 'true' });
+      if (Array.isArray(historyList)) {
+        const sorted = [...historyList].sort((a, b) => new Date(b.completedAt || b.updatedAt || b.createdAt) - new Date(a.completedAt || a.updatedAt || a.createdAt));
+        setHistoryOrders(sorted);
+      }
     } catch (err) {
       alert('Failed to settle order: ' + err.message);
     }
@@ -696,9 +752,13 @@ export default function RestaurantAdminDashboard() {
   // --- Orders status update ---
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
-      await api.orders.updateStatus(orderId, newStatus, (newStatus === 'Served' || newStatus === 'Completed') ? 'Admin' : undefined);
+      setOrders(prev => prev.map(o => o._id === orderId ? mergeOrderData(o, { ...o, status: newStatus }) : o));
+      const res = await api.orders.updateStatus(orderId, newStatus, (newStatus === 'Served' || newStatus === 'Completed') ? 'Admin' : undefined);
+      if (res && res._id) {
+        setOrders(prev => prev.map(o => o._id === orderId ? mergeOrderData(o, res) : o));
+      }
       if (selectedOrder && selectedOrder._id === orderId) {
-        setSelectedOrder({ ...selectedOrder, status: newStatus });
+        setSelectedOrder(prev => mergeOrderData(prev, { status: newStatus }));
       }
     } catch (err) {
       alert('Failed to update order status');
@@ -1032,7 +1092,7 @@ export default function RestaurantAdminDashboard() {
                   </div>
                 ) : restaurant?.slug ? (
                   <a 
-                    href={`/kitchen/${restaurant.slug}`} 
+                    href={`${ADMIN_URL}/kitchen/${restaurant.slug}`} 
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setSidebarOpen(false)}
@@ -1186,7 +1246,12 @@ export default function RestaurantAdminDashboard() {
             </button>
             <span className="font-extrabold text-slate-900 text-sm">{restaurant?.name || 'Dashboard'}</span>
           </div>
-          <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-200">{restaurant?.package}</span>
+          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm" aria-label={`${stats.newOrdersCount || 0} new orders`} title={`${stats.newOrdersCount || 0} new orders`}>
+            <Bell className="h-5 w-5" />
+            <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-rose-600 px-1 text-[9px] font-black leading-none text-white">
+              {(stats.newOrdersCount || 0) > 99 ? '99+' : (stats.newOrdersCount || 0)}
+            </span>
+          </div>
         </div>
 
         {loading ? (
@@ -1198,7 +1263,7 @@ export default function RestaurantAdminDashboard() {
           <>
             {/* Conditional Tab Rendering */}
             {activeTab === 'overview' && (
-              <OverviewTab stats={stats} restaurant={restaurant} historyOrders={historyOrders} onNavigate={setActiveTab} />
+              <OverviewTab stats={stats} restaurant={restaurant} onNavigate={setActiveTab} />
             )}
 
             {activeTab === 'orders' && (
@@ -1350,6 +1415,7 @@ export default function RestaurantAdminDashboard() {
       {isPrintModalOpen && selectedPrintOrder && (
         <BillPrint 
           order={selectedPrintOrder} 
+          restaurant={restaurant}
           onClose={() => setIsPrintModalOpen(false)} 
         />
       )}

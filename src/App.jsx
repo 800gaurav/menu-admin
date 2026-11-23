@@ -4,7 +4,6 @@ import { api, removeRestaurantToken } from './api';
 
 // Import Admin/Counter/Kitchen pages
 import RestaurantAdminLogin from './pages/RestaurantAdminLogin';
-import OnboardingWizard from './pages/OnboardingWizard';
 import RestaurantAdminDashboard from './pages/RestaurantAdminDashboard';
 import QRGenerator from './pages/QRGenerator';
 import CounterPanel from './pages/CounterPanel';
@@ -117,7 +116,7 @@ export default function App() {
       <Routes>
         {/* Restaurant Admin Routes */}
         <Route path="/admin/login" element={<RestaurantAdminLogin />} />
-        <Route path="/admin/wizard" element={<RequireRestaurantAuth><OnboardingWizard /></RequireRestaurantAuth>} />
+        <Route path="/admin/wizard" element={<Navigate to="/admin" replace />} />
         <Route path="/admin" element={<RequireRestaurantAuth><RestaurantAdminDashboard /></RequireRestaurantAuth>} />
         <Route path="/admin/qr-generator" element={<RequireRestaurantAuth><QRGenerator /></RequireRestaurantAuth>} />
 

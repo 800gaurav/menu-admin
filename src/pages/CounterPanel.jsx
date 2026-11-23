@@ -210,16 +210,26 @@ export default function CounterPanel() {
     socketRef.current.on('disconnect', () => setIsConnected(false));
     socketRef.current.emit('joinRestaurant', restId);
     socketRef.current.on('orderCreated', (newOrder) => {
-      setOrders(prev => [newOrder, ...prev].sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt)));
+      if (newOrder.status === 'Served') {
+        setOrders(prev => [newOrder, ...prev].sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt)));
+      }
       playNotificationSound();
     });
     socketRef.current.on('orderUpdated', (updated) => {
-      if (updated.status === 'Completed' || updated.status === 'Cancelled') {
-        setOrders(prev => prev.filter(o => o._id !== updated._id));
+      if (updated.status === 'Served') {
+        setOrders(prev => {
+          const exists = prev.some(o => o._id === updated._id);
+          if (exists) return prev.map(o => o._id === updated._id ? updated : o);
+          return [updated, ...prev].sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt));
+        });
       } else {
-        setOrders(prev => prev.map(o => o._id === updated._id ? updated : o).sort((a, b) => b.billRequested - a.billRequested || new Date(b.createdAt) - new Date(a.createdAt)));
+        setOrders(prev => prev.filter(o => o._id !== updated._id));
       }
       refreshSummary();
+    });
+
+    socketRef.current.on('counterBillUpdated', () => {
+      api.counter.getOrders().then(setOrders).catch((err) => console.error(err));
     });
   };
 
@@ -527,7 +537,7 @@ export default function CounterPanel() {
       </main>
 
       {isPrintModalOpen && selectedOrder && (
-        <BillPrint order={selectedOrder} onClose={() => setIsPrintModalOpen(false)} />
+        <BillPrint order={selectedOrder} restaurant={restaurant} onClose={() => setIsPrintModalOpen(false)} />
       )}
 
       {/* Premium Alert/Confirm Modal */}

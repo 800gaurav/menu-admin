@@ -1,14 +1,16 @@
 import React from 'react';
 import { X, Printer } from 'lucide-react';
 
-export default function BillPrint({ order, onClose }) {
+export default function BillPrint({ order, onClose, restaurant }) {
   const handlePrint = () => {
     window.print();
   };
 
-  const subtotal = order.subtotal || Math.round(order.totalAmount / 1.05);
-  const taxAmount = order.taxAmount || (order.totalAmount - subtotal);
-  const total = order.totalAmount;
+  const sourceOrders = Array.isArray(order.orders) && order.orders.length ? order.orders : [order];
+  const receiptItems = sourceOrders.flatMap(sourceOrder => sourceOrder.items || []);
+  const itemSubtotal = receiptItems.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+  const subtotal = Number.isFinite(order.subtotal) ? order.subtotal : itemSubtotal;
+  const total = Math.max(0, subtotal - (Number(order.discount) || 0) + (Number(order.adjustment) || 0));
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto no-print">
@@ -28,62 +30,25 @@ export default function BillPrint({ order, onClose }) {
         <div className="flex-grow p-6 overflow-y-auto print-container" id="printable-receipt">
           {/* Thermal Receipt styling */}
           <div className="border border-slate-200 p-6 bg-slate-50/20 rounded-xl space-y-4 font-mono text-xs text-slate-800 shadow-inner select-text">
-            {/* Header */}
+            {/* Receipt heading and table details */}
             <div className="text-center border-b border-dashed border-slate-300 pb-4">
-         
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-1">{order.tableName} CHECK</p>
-              <p className="text-[10px] text-slate-400 mt-1">Invoice: {order.orderNumber}</p>
-              <p className="text-[9px] text-slate-400 mt-0.5">Date: {new Date(order.createdAt).toLocaleString()}</p>
+              <h1 className="text-lg font-black text-slate-900">{restaurant?.name || order.restaurantName || 'Restaurant'}</h1>
+              <p className="mt-2 text-[10px] text-slate-500">Customer: <span className="font-bold text-slate-800">{order.customerName || order.customerId?.name || 'Guest Diner'}</span></p>
+              <p className="mt-0.5 text-[10px] text-slate-500">Table: <span className="font-bold text-slate-800">{order.tableName}</span></p>
             </div>
 
-            {/* Meta */}
-            <div className="text-[10px] space-y-1 text-slate-500 border-b border-dashed border-slate-300 pb-3">
-              <div className="flex justify-between">
-                <span>Table Target:</span>
-                <span className="font-bold text-slate-800">{order.tableName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Source:</span>
-                <span className="font-bold text-slate-800 capitalize">{order.placedBy || 'customer'}</span>
-              </div>
-
-              {order.placedBy === 'waiter' ? (
-                <div className="flex justify-between">
-                  <span>Server / Waiter:</span>
-                  <span className="font-bold text-slate-800">{order.waiterId?.name || 'Staff Waiter'}</span>
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between">
-                    <span>Customer:</span>
-                    <span className="font-bold text-slate-800">{order.customerId?.name || 'Guest Diner'}</span>
-                  </div>
-                  {order.customerId?.mobile && (
-                    <div className="flex justify-between">
-                      <span>Mobile Contact:</span>
-                      <span className="font-bold text-slate-800 font-mono">{order.customerId.mobile}</span>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Items */}
+            {/* All dishes from the table bill, without internal order metadata */}
             <div className="border-b border-dashed border-slate-300 pb-3 space-y-2.5">
-              {order.items.map((it, index) => (
-                <div key={index} className="space-y-0.5">
-                  <div className="flex justify-between font-bold text-slate-800">
-                    <span>{it.name}</span>
-                    <span>₹{it.price * it.quantity}</span>
+              {receiptItems.map((it, index) => (
+                <div key={it._id || index} className="space-y-0.5">
+                  <div className="flex justify-between gap-2 font-bold text-slate-800">
+                    <span>{it.name}{it.variantName ? ` (${it.variantName})` : ''}</span>
+                    <span className="shrink-0">{'\u20B9'}{it.price * it.quantity}</span>
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-400">
-                    <span>{it.quantity} x ₹{it.price}</span>
+                    <span>{it.quantity} x {'\u20B9'}{it.price}</span>
                   </div>
-                  {it.specialInstructions && (
-                    <p className="text-[9px] text-amber-600 font-medium italic">
-                      * Inst: {it.specialInstructions}
-                    </p>
-                  )}
+                  {it.specialInstructions && <p className="text-[9px] text-amber-600 font-medium italic">* Inst: {it.specialInstructions}</p>}
                 </div>
               ))}
             </div>
@@ -94,10 +59,8 @@ export default function BillPrint({ order, onClose }) {
                 <span>Subtotal:</span>
                 <span className="text-slate-800 font-bold">₹{subtotal}</span>
               </div>
-              <div className="flex justify-between">
-                <span>GST Tax (5%):</span>
-                <span className="text-slate-800 font-bold">₹{taxAmount}</span>
-              </div>
+              {order.discount > 0 && <div className="flex justify-between"><span>Discount:</span><span className="text-slate-800 font-bold">-{'\u20B9'}{order.discount}</span></div>}
+              {order.adjustment !== 0 && <div className="flex justify-between"><span>Adjustment:</span><span className="text-slate-800 font-bold">{order.adjustment > 0 ? '+' : ''}{'\u20B9'}{order.adjustment}</span></div>}
             </div>
 
             {/* Grand Total */}

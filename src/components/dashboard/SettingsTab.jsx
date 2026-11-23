@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, ImagePlus, ShoppingCart, KeyRound, Palette, Globe, Smartphone, ShieldCheck } from 'lucide-react';
+import { Trash2, ImagePlus, ShoppingCart, KeyRound, Palette, Globe, Smartphone, ShieldCheck, LayoutGrid, List } from 'lucide-react';
 import { api, BACKEND_URL } from '../../api';
 
 export default function SettingsTab({
@@ -232,6 +232,40 @@ export default function SettingsTab({
                 <span className="text-[10px] text-slate-600 font-bold mt-1">Add</span>
                 <input type="file" accept="image/*" multiple onChange={handleUploadBanner} className="hidden" />
               </label>
+            </div>
+          </div>
+
+          {/* Customer menu product layout */}
+          <div className={sectionCls}>
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <ShoppingCart className="w-4 h-4 text-[#003b1b]" />
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Customer Menu Product Layout</h2>
+                <p className="text-xs text-slate-500 font-medium">Choose how menu items appear to customers.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { value: 'grid', title: 'Two-column grid', description: 'Compact cards shown side by side.', Icon: LayoutGrid },
+                { value: 'list', title: 'Single-item list', description: 'One item per row with photo, details and Add button.', Icon: List },
+              ].map(({ value, title, description, Icon }) => {
+                const selected = (restaurant?.brandingSettings?.menuItemLayout || 'grid') === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRestaurant({ ...restaurant, brandingSettings: { ...(restaurant.brandingSettings || {}), menuItemLayout: value } })}
+                    className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-colors ${selected ? 'border-[#003b1b] bg-emerald-50/60 ring-1 ring-[#003b1b]/10' : 'border-slate-200 hover:bg-slate-50'}`}
+                    aria-pressed={selected}
+                  >
+                    <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${selected ? 'text-[#003b1b]' : 'text-slate-400'}`} />
+                    <span>
+                      <span className="block text-xs font-bold text-slate-800">{title}</span>
+                      <span className="block text-[11px] text-slate-500 mt-1">{description}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

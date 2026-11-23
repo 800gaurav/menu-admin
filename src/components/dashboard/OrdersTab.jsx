@@ -98,7 +98,9 @@ export default function OrdersTab({
       const matchesSearch = o.tableName.toLowerCase().includes(orderSearch.toLowerCase()) || 
         (o.orderNumber && o.orderNumber.toLowerCase().includes(orderSearch.toLowerCase())) ||
         (o.customerId?.name && o.customerId.name.toLowerCase().includes(orderSearch.toLowerCase())) ||
-        (o.customerId?.mobile && o.customerId.mobile.includes(orderSearch));
+        (o.customerName && o.customerName.toLowerCase().includes(orderSearch.toLowerCase())) ||
+        (o.customerId?.mobile && o.customerId.mobile.includes(orderSearch)) ||
+        (o.customerMobile && o.customerMobile.includes(orderSearch));
       
       const matchesTable = !selectedTableFilter || o.tableName === selectedTableFilter;
 
@@ -143,24 +145,53 @@ export default function OrdersTab({
         </div>
       ) : (
         <>
-          {/* Controls & Filter Bar (Clean Table Filter only, search removed as requested) */}
+          {/* Controls & Filter Bar (Clean Table Filter and Sound toggle in one row on mobile) */}
           <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between bg-white px-3 sm:px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm text-xs mb-3">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <span className="text-slate-600 font-extrabold shrink-0 text-xs">Table:</span>
-              <select 
-                className="h-9 px-3 border border-slate-200 rounded-xl bg-white outline-none font-bold text-slate-800 focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 text-xs cursor-pointer flex-1 sm:flex-initial"
-                value={selectedTableFilter}
-                onChange={(e) => setSelectedTableFilter(e.target.value)}
-              >
-                <option value="">All Tables</option>
-                {uniqueTables.map(tName => (
-                  <option key={tName} value={tName}>{tName}</option>
-                ))}
-              </select>
+            {/* Table filter & Mobile Sound toggle */}
+            <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 flex-1 sm:flex-initial min-w-0">
+                <span className="text-slate-600 font-extrabold shrink-0 text-xs">Table:</span>
+                <select 
+                  className="h-9 px-3 border border-slate-200 rounded-xl bg-white outline-none font-bold text-slate-800 focus:ring-2 focus:ring-emerald-600/20 focus:border-emerald-600 text-xs cursor-pointer w-full sm:w-44"
+                  value={selectedTableFilter}
+                  onChange={(e) => setSelectedTableFilter(e.target.value)}
+                >
+                  <option value="">All Tables</option>
+                  {uniqueTables.map(tName => (
+                    <option key={tName} value={tName}>{tName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sound Notification Alert Toggle Button (Visible on Mobile right next to Table filter) */}
+              {toggleSound && (
+                <button
+                  type="button"
+                  onClick={toggleSound}
+                  className={`sm:hidden h-9 px-2.5 rounded-xl border flex items-center gap-1.5 font-bold text-xs cursor-pointer transition-all shrink-0 shadow-2xs ${
+                    soundEnabled
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
+                      : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                  }`}
+                  title={soundEnabled ? 'Live Order Sound Alert is ON - Click to Mute' : 'Live Order Sound Alert is MUTED - Click to Enable'}
+                >
+                  {soundEnabled ? (
+                    <>
+                      <Volume2 className="w-4 h-4 text-emerald-600 animate-pulse shrink-0" />
+                      <span className="text-emerald-900 font-black">Sound: ON</span>
+                    </>
+                  ) : (
+                    <>
+                      <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
+                      <span>Sound: OFF</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
-            {/* Right side: Sound Alert Toggle & History date filters */}
-            <div className="flex items-center gap-2.5 justify-between sm:justify-end w-full sm:w-auto">
+            {/* Right side: Desktop Sound Toggle & History date filters */}
+            <div className={`flex items-center gap-2.5 justify-between sm:justify-end w-full sm:w-auto ${viewMode !== 'table' ? 'hidden sm:flex' : 'flex'}`}>
               {viewMode === 'table' && (
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -202,12 +233,12 @@ export default function OrdersTab({
                 </div>
               )}
 
-              {/* Sound Notification Alert Toggle Button */}
+              {/* Sound Notification Alert Toggle Button (Visible on Desktop) */}
               {toggleSound && (
                 <button
                   type="button"
                   onClick={toggleSound}
-                  className={`h-9 px-3 rounded-xl border flex items-center gap-1.5 font-bold text-xs cursor-pointer transition-all shadow-2xs ${
+                  className={`hidden sm:flex h-9 px-3 rounded-xl border items-center gap-1.5 font-bold text-xs cursor-pointer transition-all shadow-2xs ${
                     soundEnabled
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
                       : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
@@ -216,12 +247,12 @@ export default function OrdersTab({
                 >
                   {soundEnabled ? (
                     <>
-                      <Volume2 className="w-4 h-4 text-emerald-600 animate-pulse" />
+                      <Volume2 className="w-4 h-4 text-emerald-600 animate-pulse shrink-0" />
                       <span className="text-emerald-900 font-black">Sound: ON</span>
                     </>
                   ) : (
                     <>
-                      <VolumeX className="w-4 h-4 text-slate-400" />
+                      <VolumeX className="w-4 h-4 text-slate-400 shrink-0" />
                       <span>Sound: OFF</span>
                     </>
                   )}
@@ -380,7 +411,7 @@ export default function OrdersTab({
                                   <div className="min-w-0">
                                     <span className="font-extrabold text-slate-900 text-xs block leading-tight">{ord.orderNumber}</span>
                                     <span className="text-xs text-slate-600 font-semibold truncate block max-w-[130px]">
-                                      {ord.customerId?.name || 'Guest Diner'}
+                                      {ord.customerId?.name || ord.customerName || (typeof ord.customerId === 'object' && ord.customerId?.name) || 'Guest Diner'}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg shrink-0 text-[10px] font-bold text-slate-700">
@@ -413,13 +444,7 @@ export default function OrdersTab({
                                         className="h-7 px-2.5 bg-[#003b1b] hover:bg-[#166534] text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
                                       >Accept</button>
                                     )}
-                                    {isAccepted && (
-                                      <button
-                                        onClick={() => handleUpdateOrderStatus(ord._id, 'Preparing')}
-                                        className="h-7 px-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
-                                      >Prepare</button>
-                                    )}
-                                    {isPreparing && (
+                                    {(isAccepted || isPreparing) && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus(ord._id, 'Ready')}
                                         className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
@@ -493,10 +518,10 @@ export default function OrdersTab({
                                   </span>
                                 </td>
                                 <td className="p-3">
-                                  {ord.customerId ? (
+                                  {(ord.customerId?.name || ord.customerName) ? (
                                     <div>
-                                      <span className="text-slate-800 font-bold block">{ord.customerId?.name || 'N/A'}</span>
-                                      <span className="text-[9px] text-slate-400 block mt-0.5">{ord.customerId?.mobile || ''}</span>
+                                      <span className="text-slate-800 font-bold block">{ord.customerId?.name || ord.customerName}</span>
+                                      <span className="text-[9px] text-slate-400 block mt-0.5">{ord.customerId?.mobile || ord.customerMobile || ''}</span>
                                     </div>
                                   ) : (
                                     <span className="text-slate-400 font-bold">Guest Diner</span>
@@ -693,10 +718,10 @@ export default function OrdersTab({
                   <span className="text-[10px] font-black text-slate-600 uppercase tracking-wider">Customer</span>
                 </div>
                 <div className="px-4 py-3 border-b border-slate-200 shrink-0 bg-slate-50/30">
-                  {selectedViewOrder.customerId ? (
+                  {(selectedViewOrder.customerId?.name || selectedViewOrder.customerName) ? (
                     <>
-                      <span className="block font-black text-slate-900 text-xs sm:text-sm">{selectedViewOrder.customerId.name || 'Diner'}</span>
-                      <span className="block text-[11px] text-slate-500 font-bold mt-0.5">{selectedViewOrder.customerId.mobile || ''}</span>
+                      <span className="block font-black text-slate-900 text-xs sm:text-sm">{selectedViewOrder.customerId?.name || selectedViewOrder.customerName}</span>
+                      <span className="block text-[11px] text-slate-500 font-bold mt-0.5">{selectedViewOrder.customerId?.mobile || selectedViewOrder.customerMobile || ''}</span>
                     </>
                   ) : (
                     <span className="font-bold text-slate-500 text-xs">Guest Diner</span>
@@ -754,13 +779,7 @@ export default function OrdersTab({
                       >Accept</button>
                     </div>
                   )}
-                  {selectedViewOrder.status === 'Accepted' && (
-                    <button
-                      onClick={() => { handleUpdateOrderStatus(selectedViewOrder._id, 'Preparing'); setSelectedViewOrder(prev => ({ ...prev, status: 'Preparing' })); }}
-                      className="w-full h-9 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl cursor-pointer text-xs transition-colors shadow-xs"
-                    >Start Preparing</button>
-                  )}
-                  {selectedViewOrder.status === 'Preparing' && (
+                  {(selectedViewOrder.status === 'Accepted' || selectedViewOrder.status === 'Preparing') && (
                     <button
                       onClick={() => { handleUpdateOrderStatus(selectedViewOrder._id, 'Ready'); setSelectedViewOrder(prev => ({ ...prev, status: 'Ready' })); }}
                       className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl cursor-pointer text-xs transition-colors shadow-xs"

@@ -1,10 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Banknote, Coins, Award, ExternalLink, UtensilsCrossed,
-  TrendingUp, Activity, Clock, Table2, QrCode, Rss,
-  BarChart2, ShoppingBag, CheckCircle2, AlertCircle,
-  ArrowUpRight, ArrowDownRight, Users, ChevronRight,
-  Filter, Calendar, Flame, ChefHat, Sparkles
+  Banknote, Coins, ExternalLink, UtensilsCrossed, TrendingUp, Activity,
+  BarChart2, ShoppingBag, AlertCircle, ChevronRight, ChefHat
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -17,9 +14,8 @@ import {
   Tooltip,
   Legend,
   Filler,
-  ArcElement
 } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 
 const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
 
@@ -33,11 +29,10 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler,
-  ArcElement
+  Filler
 );
 
-export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders = [], onNavigate }) {
+export default function OverviewTab({ stats = {}, restaurant = {}, onNavigate }) {
   const [chartMetric, setChartMetric] = useState('revenue'); // 'revenue' | 'orders'
   const [timeFilter, setTimeFilter] = useState('7days'); // '7days' | '30days'
 
@@ -46,45 +41,8 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
   const lastWeekRevenue = stats.lastWeekRevenue || 0;
   const monthlyRevenue = stats.monthlyRevenue || 0;
   const activeOrdersCount = stats.activeOrdersCount || 0;
-  const totalTables = stats.totalTables || 0;
   const lifetimeRevenue = stats.lifetimeRevenue || 0;
   const lifetimeOrdersCount = stats.lifetimeOrdersCount || 0;
-
-  // Order status breakdown for Doughnut chart
-  const orderStatusCounts = useMemo(() => {
-    const counts = { Served: 0, Ready: 0, Cooking: 0, New: 0, Cancelled: 0 };
-    historyOrders.forEach(o => {
-      const s = o.status || 'New';
-      if (counts[s] !== undefined) counts[s]++;
-      else counts.New++;
-    });
-    return counts;
-  }, [historyOrders]);
-
-  // Top selling items
-  const topItems = useMemo(() => {
-    const itemCounts = {};
-    historyOrders.forEach(order => {
-      if (order.status !== 'Cancelled' && order.items) {
-        order.items.forEach(it => {
-          itemCounts[it.name] = (itemCounts[it.name] || 0) + (it.quantity || 1);
-        });
-      }
-    });
-    return Object.entries(itemCounts)
-      .map(([name, qty]) => ({ name, qty }))
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
-  }, [historyOrders]);
-
-  const maxQty = topItems.length > 0 ? topItems[0].qty : 1;
-
-  // Recent 5 settled orders for live activity stream
-  const recentOrders = useMemo(() => {
-    return [...historyOrders]
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 5);
-  }, [historyOrders]);
 
   // Dynamic Chart Data based on timeFilter (7 or 30 days)
   const daysCount = timeFilter === '30days' ? 14 : 7;
@@ -97,27 +55,24 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
   }, [daysCount]);
 
   const salesTrend = useMemo(() => {
+    const dailySales = new Map((stats.salesTrend || []).map(day => [day.date, day]));
     return dateBuckets.map(date => {
-      const dayStr = date.toDateString();
+      const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       const label = date.toLocaleDateString('en-IN', {
         day: 'numeric',
         month: daysCount > 7 ? 'numeric' : 'short'
       });
-      const dayOrders = historyOrders.filter(o =>
-        o.status !== 'Cancelled' && new Date(o.createdAt).toDateString() === dayStr
-      );
-      const revenue = dayOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-      const count = dayOrders.length;
-      return { label, revenue, count };
+      const day = dailySales.get(dateKey) || {};
+      return { label, revenue: day.revenue || 0, count: day.count || 0 };
     });
-  }, [dateBuckets, historyOrders, daysCount]);
+  }, [dateBuckets, stats.salesTrend, daysCount]);
 
   // Chart.js Line Configuration
   const lineChartData = {
     labels: salesTrend.map(d => d.label),
     datasets: [
       {
-        label: chartMetric === 'revenue' ? 'Sales Revenue (₹)' : 'Settled Orders',
+        label: chartMetric === 'revenue' ? 'Sales Revenue (₹)' : 'Orders',
         data: salesTrend.map(d => (chartMetric === 'revenue' ? d.revenue : d.count)),
         borderColor: chartMetric === 'revenue' ? '#059669' : '#3b82f6',
         backgroundColor: chartMetric === 'revenue' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(59, 130, 246, 0.08)',
@@ -166,39 +121,6 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
     }
   };
 
-  // Doughnut Chart Data
-  const doughnutData = {
-    labels: ['Served', 'In Kitchen', 'Ready', 'New'],
-    datasets: [
-      {
-        data: [
-          orderStatusCounts.Served || 0,
-          orderStatusCounts.Cooking || 0,
-          orderStatusCounts.Ready || 0,
-          orderStatusCounts.New || 0
-        ],
-        backgroundColor: ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6'],
-        borderWidth: 2,
-        borderColor: '#ffffff',
-        hoverOffset: 4
-      }
-    ]
-  };
-
-  const doughnutOptions = {
-    cutout: '72%',
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: '#0f172a',
-        padding: 8,
-        cornerRadius: 6
-      }
-    }
-  };
-
   // Quick stat cards matching Dhantag gradient & clean layout
   const statsCards = [
     {
@@ -213,7 +135,7 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
     {
       title: "Active Live Orders",
       value: `${activeOrdersCount}`,
-      sub: `${totalTables} tables connected`,
+      sub: 'Orders currently in progress',
       icon: Activity,
       gradient: 'from-blue-700 to-indigo-900',
       iconBg: 'bg-blue-500/20 text-blue-200',
@@ -304,52 +226,32 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
         ))}
       </div>
 
-      {/* ── Secondary Quick Metrics Row ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">All-Time Settled</span>
-            <Coins className="w-4 h-4 text-amber-500" />
+      {/* Operational counters */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { title: 'All-Time Settled', value: `\u20B9${lifetimeRevenue.toLocaleString()}`, detail: `${lifetimeOrdersCount} total orders`, icon: Coins, tone: 'text-amber-600', iconBg: 'bg-amber-50' },
+          { title: 'Cashier Orders', value: stats.cashierOrdersCount || 0, detail: 'Awaiting payment', icon: ShoppingBag, tone: 'text-violet-700', iconBg: 'bg-violet-50' },
+          { title: 'Ready to Serve', value: stats.readyOrdersCount || 0, detail: 'Waiting to be served', icon: ChefHat, tone: 'text-emerald-700', iconBg: 'bg-emerald-50' },
+          { title: 'Waiter Calls', value: stats.pendingWaiterCallsCount || 0, detail: 'Not attended yet', icon: AlertCircle, tone: 'text-rose-700', iconBg: 'bg-rose-50' },
+        ].map((card) => (
+          <div key={card.title} className="flex min-h-[94px] items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-4 shadow-xs">
+            <div className="min-w-0">
+              <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{card.title}</p>
+              <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">{card.value}</p>
+              <p className="mt-0.5 text-[10px] font-medium text-slate-500">{card.detail}</p>
+            </div>
+            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${card.iconBg} ${card.tone}`}>
+              <card.icon className="h-5 w-5" />
+            </span>
           </div>
-          <p className="text-lg font-black text-slate-900">₹{lifetimeRevenue.toLocaleString()}</p>
-          <span className="text-[10px] text-slate-500 font-semibold">{lifetimeOrdersCount} total orders</span>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Active Tables</span>
-            <Table2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-lg font-black text-slate-900">{activeOrdersCount} / {totalTables}</p>
-          <span className="text-[10px] text-slate-500 font-semibold">Dining right now</span>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Average Ticket</span>
-            <TrendingUp className="w-4 h-4 text-blue-600" />
-          </div>
-          <p className="text-lg font-black text-slate-900">
-            ₹{todayOrdersCount > 0 ? Math.round(todayRevenue / todayOrdersCount) : 0}
-          </p>
-          <span className="text-[10px] text-slate-500 font-semibold">Per order today</span>
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Self-Order QR</span>
-            <QrCode className="w-4 h-4 text-violet-600" />
-          </div>
-          <p className="text-lg font-black text-slate-900">{totalTables}</p>
-          <span className="text-[10px] text-emerald-600 font-bold">100% active terminals</span>
-        </div>
+        ))}
       </div>
 
-      {/* ── Main Analytics Section: Chart (Left 8 Cols) + Distribution (Right 4 Cols) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+      {/* Sales trend */}
+      <div className="grid grid-cols-1 gap-5">
         
         {/* Left Column: Interactive Trend Chart */}
-        <div className="lg:col-span-8 bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
@@ -404,7 +306,7 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
               </p>
             </div>
             <div className="text-center border-x border-slate-100">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Orders Settled</p>
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Orders placed</p>
               <p className="text-base font-black text-slate-900 mt-0.5">
                 {salesTrend.reduce((sum, d) => sum + d.count, 0)}
               </p>
@@ -418,172 +320,7 @@ export default function OverviewTab({ stats = {}, restaurant = {}, historyOrders
           </div>
         </div>
 
-        {/* Right Column: Order Status Distribution (Doughnut) */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900">Order Distribution</h3>
-                <p className="text-xs font-medium text-slate-500">Breakdown by current status</p>
-              </div>
-              <Sparkles className="w-4 h-4 text-amber-500" />
-            </div>
-
-            <div className="relative mt-4 h-[180px] flex items-center justify-center">
-              <Doughnut data={doughnutData} options={doughnutOptions} />
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-black text-slate-900">{historyOrders.length}</span>
-                <span className="text-[10px] font-bold text-slate-500 uppercase">Total Logged</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Status Breakdown Legend Items */}
-          <div className="mt-4 pt-3 border-t border-slate-100 space-y-2">
-            {[
-              { label: 'Served / Completed', count: orderStatusCounts.Served, color: 'bg-emerald-500' },
-              { label: 'In Kitchen (Cooking)', count: orderStatusCounts.Cooking, color: 'bg-amber-500' },
-              { label: 'Ready to Serve', count: orderStatusCounts.Ready, color: 'bg-blue-500' },
-              { label: 'New / Queued', count: orderStatusCounts.New, color: 'bg-violet-500' },
-            ].map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs py-0.5">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2.5 h-2.5 rounded-full ${item.color}`} />
-                  <span className="text-slate-600 font-medium">{item.label}</span>
-                </div>
-                <span className="font-bold text-slate-900">{item.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
       </div>
-
-      {/* ── Bottom Row: Top Selling Dishes + Recent Settled Orders ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        
-        {/* Top Selling Dishes (6 Cols) */}
-        <div className="lg:col-span-6 bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-            <div className="flex items-center gap-2">
-              <Flame className="w-5 h-5 text-amber-500" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900">Top Selling Menu Items</h3>
-                <p className="text-[11px] font-medium text-slate-500">Highest quantity ordered by diners</p>
-              </div>
-            </div>
-            {onNavigate && (
-              <button
-                onClick={() => onNavigate('menu')}
-                className="text-xs font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer"
-              >
-                View Menu <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {topItems.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 font-medium text-xs">
-              No orders registered yet to rank menu items.
-            </div>
-          ) : (
-            <div className="space-y-3.5">
-              {topItems.map((item, idx) => {
-                const rankLabels = ['🥇', '🥈', '🥉', '4th', '5th'];
-                const rankGradients = [
-                  'from-amber-500 to-amber-600',
-                  'from-slate-400 to-slate-500',
-                  'from-amber-700 to-amber-800',
-                  'from-blue-500 to-blue-600',
-                  'from-emerald-500 to-emerald-600'
-                ];
-                const pct = Math.round((item.qty / maxQty) * 100);
-
-                return (
-                  <div key={idx} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm shrink-0">{rankLabels[idx]}</span>
-                        <span className="font-bold text-slate-800 truncate">{item.name}</span>
-                      </div>
-                      <span className="font-extrabold text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md text-[11px]">
-                        {item.qty} units sold
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full bg-gradient-to-r ${rankGradients[idx]} transition-all duration-500`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Recent Settled Orders (6 Cols) */}
-        <div className="lg:col-span-6 bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-            <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-600" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-900">Recent Settled Orders</h3>
-                <p className="text-[11px] font-medium text-slate-500">Live cashier settlement log</p>
-              </div>
-            </div>
-            {onNavigate && (
-              <button
-                onClick={() => onNavigate('billing-history')}
-                className="text-xs font-bold text-blue-800 hover:text-blue-950 flex items-center gap-1 cursor-pointer"
-              >
-                All History <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {recentOrders.length === 0 ? (
-            <div className="text-center py-12 text-slate-500 font-medium text-xs">
-              No recent settlements available.
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {recentOrders.map((ord, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-100 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-800 shrink-0">
-                      {ord.tableName ? ord.tableName.replace(/Table\s*/i, 'T') : '#'}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900 truncate">
-                        {ord.orderNumber || `Order #${ord._id?.slice(-4)}`}
-                      </p>
-                      <p className="text-[10px] text-slate-500 font-medium truncate">
-                        {ord.items?.length || 0} items · {new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-black text-slate-900">₹{(ord.totalAmount || 0).toLocaleString()}</p>
-                    <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase ${
-                      ord.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {ord.paymentStatus || 'Paid'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
-
     </div>
   );
 }

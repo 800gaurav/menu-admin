@@ -78,6 +78,21 @@ export default function QRGenerator() {
       c.closePath();
     };
 
+    const drawFittedText = (c, value, x, y, maxWidth, size, weight = '700') => {
+      const text = String(value || '').trim();
+      let fontSize = size;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.font = `${weight} ${fontSize}px system-ui, -apple-system, sans-serif`;
+      while (fontSize > 12 && c.measureText(text).width > maxWidth) {
+        fontSize -= 1;
+        c.font = `${weight} ${fontSize}px system-ui, -apple-system, sans-serif`;
+      }
+      let fitted = text;
+      while (fitted.length > 3 && c.measureText(fitted).width > maxWidth) fitted = `${fitted.slice(0, -4)}...`;
+      c.fillText(fitted, x, y);
+    };
+
     try {
       // 2. Generate raw QR code image in memory (using high error correction for framing)
       const qrDataUrl = await QRCode.toDataURL(targetUrl, {
@@ -106,173 +121,135 @@ export default function QRGenerator() {
           ctx.drawImage(qrImg, 10, 10, 300, 300);
         }
         else if (template === 'tent') {
-          // Tent Card / Portrait Standee Template (PhonePe / Paytm style)
-          canvas.width = 400;
-          canvas.height = 600;
-          
-          // Background Color (Soft neutral grey/slate background)
-          ctx.fillStyle = '#f8fafc';
+          // Portrait table tent: clean, high contrast, and easy to scan at a glance.
+          canvas.width = 440;
+          canvas.height = 660;
+          ctx.fillStyle = '#f4f7f5';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          // Outer Border
-          ctx.strokeStyle = accentColor;
-          ctx.lineWidth = 14;
-          ctx.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
-          
-          // Top Header Header Block (Deep rich gradient)
-          const grad = ctx.createLinearGradient(14, 14, canvas.width - 24, 140);
-          grad.addColorStop(0, accentColor);
-          grad.addColorStop(1, '#0f172a');
-          ctx.fillStyle = grad;
-          ctx.fillRect(14, 14, canvas.width - 28, 146);
 
-          // Top Header Tagline/Brand Text
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.font = '900 24px system-ui, -apple-system, sans-serif';
-          ctx.fillText(restaurant?.name?.toUpperCase() || 'STITCH CAFE', canvas.width / 2, 70);
-
-          ctx.fillStyle = '#f1f5f9';
-          ctx.font = 'bold 10px system-ui, -apple-system, sans-serif';
-          // ctx.fillText((restaurant?.phone || restaurant?.email || 'SCAN TO ORDER ONLINE').toUpperCase(), canvas.width / 2, 105);
-
-          // Draw a soft separator line
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(40, 120);
-          ctx.lineTo(canvas.width - 40, 120);
-          ctx.stroke();
-
-          // Main QR White Card Container (with soft shadow)
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-          ctx.shadowBlur = 15;
-          ctx.shadowOffsetX = 0;
-          ctx.shadowOffsetY = 8;
-
-          ctx.fillStyle = '#ffffff';
-          drawRoundedRect(ctx, 35, 140, 330, 390, 24);
-          ctx.fill();
-
-          // Disable shadow for inner drawings
-          ctx.shadowColor = 'transparent';
-
-          // Table / Node Pill badge above QR
           ctx.fillStyle = accentColor;
-          drawRoundedRect(ctx, 110, 165, 180, 42, 12);
+          drawRoundedRect(ctx, 16, 16, 408, 628, 28);
           ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          drawRoundedRect(ctx, 22, 22, 396, 616, 24);
+          ctx.fill();
+          ctx.fillStyle = accentColor;
+          drawRoundedRect(ctx, 22, 22, 396, 178, 24);
+          ctx.fill();
+          ctx.fillRect(22, 170, 396, 30);
+
+          ctx.fillStyle = 'rgba(255,255,255,.16)';
+          drawRoundedRect(ctx, 185, 48, 70, 4, 2);
+          ctx.fill();
+          ctx.fillStyle = '#d9f4e5';
+          ctx.font = '700 12px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('WELCOME TO', canvas.width / 2, 78);
+          ctx.fillStyle = '#ffffff';
+          drawFittedText(ctx, restaurant?.name || 'Your Restaurant', canvas.width / 2, 119, 350, 30, '800');
+          ctx.fillStyle = 'rgba(255,255,255,.78)';
+          ctx.font = '600 12px system-ui, -apple-system, sans-serif';
+          ctx.fillText('GOOD FOOD. GREAT MOMENTS.', canvas.width / 2, 158);
+
+          ctx.fillStyle = '#eef5f0';
+          drawRoundedRect(ctx, 91, 218, 258, 48, 16);
+          ctx.fill();
+          ctx.fillStyle = accentColor;
+          drawFittedText(ctx, `${footerLabel}: ${selectedTable.name}`, canvas.width / 2, 242, 226, 17, '800');
 
           ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.font = '900 14px system-ui, -apple-system, sans-serif';
-          ctx.fillText(`${footerLabel.toUpperCase()}: ${selectedTable.name.toUpperCase()}`, canvas.width / 2, 191);
+          drawRoundedRect(ctx, 68, 286, 304, 304, 24);
+          ctx.fill();
+          ctx.strokeStyle = '#e7ece8';
+          ctx.lineWidth = 2;
+          drawRoundedRect(ctx, 68, 286, 304, 304, 24);
+          ctx.stroke();
+          ctx.drawImage(qrImg, 91, 309, 258, 258);
 
-          // Draw the QR Code image inside the card
-          ctx.drawImage(qrImg, 75, 225, 250, 250);
-
-          // Instruction Text below QR
-          ctx.fillStyle = '#475569';
-          ctx.textAlign = 'center';
-          ctx.font = 'bold 12px system-ui, -apple-system, sans-serif';
-          ctx.fillText(label.toUpperCase(), canvas.width / 2, 502);
-
-          // Bottom Bar details
-          ctx.fillStyle = '#64748b';
-          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
-          ctx.fillText('NO APP REQUIRED • SCAN TO BROWSE & PAY', canvas.width / 2, 555);
-
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = '900 10px system-ui, -apple-system, sans-serif';
-     
+          ctx.fillStyle = '#17231c';
+          drawFittedText(ctx, label || 'SCAN TO ORDER', canvas.width / 2, 611, 350, 19, '800');
+          ctx.fillStyle = '#748178';
+          ctx.font = '500 11px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Scan with your camera - No app needed', canvas.width / 2, 626);
         }
         else if (template === 'banner') {
-          // Banner / Landscape POS Standee Template
-          canvas.width = 640;
-          canvas.height = 400;
-
-          // Background
-          ctx.fillStyle = '#f8fafc';
+          // Landscape counter stand: clear welcome message on the left, QR on the right.
+          canvas.width = 760;
+          canvas.height = 480;
+          ctx.fillStyle = '#f2f5f3';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-          // Outer Border
-          ctx.strokeStyle = accentColor;
-          ctx.lineWidth = 14;
-          ctx.strokeRect(7, 7, canvas.width - 14, canvas.height - 14);
-
-          // Left Rounded Card Panel (Info panel)
-          ctx.fillStyle = '#ffffff';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.05)';
-          ctx.shadowBlur = 10;
-          drawRoundedRect(ctx, 30, 30, 310, 340, 20);
-          ctx.fill();
-          ctx.shadowColor = 'transparent';
-
-          // Left Panel Header
           ctx.fillStyle = accentColor;
-          ctx.font = '900 22px system-ui, -apple-system, sans-serif';
+          drawRoundedRect(ctx, 16, 16, 728, 448, 30);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          drawRoundedRect(ctx, 22, 22, 716, 436, 25);
+          ctx.fill();
+
+          ctx.fillStyle = '#f5f8f6';
+          drawRoundedRect(ctx, 40, 40, 386, 400, 22);
+          ctx.fill();
+          ctx.fillStyle = accentColor;
+          drawRoundedRect(ctx, 40, 40, 386, 12, 6);
+          ctx.fill();
+          ctx.fillStyle = '#6b7b70';
+          ctx.font = '700 13px system-ui, -apple-system, sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText(restaurant?.name?.toUpperCase() || 'STITCH CAFE', 55, 80);
-
-          // Line separator
-          ctx.strokeStyle = '#e2e8f0';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(55, 105);
-          ctx.lineTo(315, 105);
-          ctx.stroke();
-
-          // Left Panel Instructions
-          ctx.fillStyle = '#1e293b';
-          ctx.font = '900 13px system-ui, -apple-system, sans-serif';
-          ctx.fillText('EASY TO ORDER:', 55, 135);
-
-          ctx.fillStyle = '#475569';
-          ctx.font = 'bold 11px system-ui, -apple-system, sans-serif';
-          ctx.fillText('1. Open your phone camera or QR scanner', 55, 175);
-          ctx.fillText('2. Scan the code to view the live menu', 55, 205);
-          ctx.fillText('3. Add your favorite dishes to basket', 55, 235);
-          ctx.fillText('4. Confirm order, chef begins cooking!', 55, 265);
-
-          // Table badge inside Left panel
+          ctx.textBaseline = 'middle';
+          ctx.fillText('WELCOME TO', 72, 94);
           ctx.fillStyle = accentColor;
-          drawRoundedRect(ctx, 55, 300, 260, 46, 12);
+          ctx.textAlign = 'left';
+          let brandSize = 31;
+          const brandName = String(restaurant?.name || 'Your Restaurant').trim();
+          ctx.font = `800 ${brandSize}px system-ui, -apple-system, sans-serif`;
+          while (brandSize > 16 && ctx.measureText(brandName).width > 320) {
+            brandSize -= 1;
+            ctx.font = `800 ${brandSize}px system-ui, -apple-system, sans-serif`;
+          }
+          let fittedBrand = brandName;
+          while (fittedBrand.length > 3 && ctx.measureText(fittedBrand).width > 320) fittedBrand = `${fittedBrand.slice(0, -4)}...`;
+          ctx.fillText(fittedBrand, 72, 140);
+          ctx.fillStyle = '#647168';
+          ctx.font = '500 15px system-ui, -apple-system, sans-serif';
+          ctx.fillText('Browse the menu and order your favorites.', 72, 178);
+
+          ctx.fillStyle = accentColor;
+          drawRoundedRect(ctx, 72, 226, 320, 60, 16);
           ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          drawFittedText(ctx, `${footerLabel}: ${selectedTable.name}`, 232, 256, 280, 19, '800');
+
+          ctx.fillStyle = '#334238';
+          ctx.font = '700 14px system-ui, -apple-system, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText('A better way to order', 72, 332);
+          ctx.fillStyle = '#718078';
+          ctx.font = '500 13px system-ui, -apple-system, sans-serif';
+          ctx.fillText('1. Open your camera', 72, 362);
+          ctx.fillText('2. Scan the code to see our menu', 72, 386);
+          ctx.fillText('3. Order from your table', 72, 410);
 
           ctx.fillStyle = '#ffffff';
-          ctx.font = '900 14px system-ui, -apple-system, sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${footerLabel.toUpperCase()} - ${selectedTable.name.toUpperCase()}`, 185, 329);
-
-          // Right Rounded Card Panel (QR panel)
-          ctx.fillStyle = '#ffffff';
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.05)';
-          ctx.shadowBlur = 10;
-          drawRoundedRect(ctx, 365, 30, 245, 340, 20);
+          ctx.shadowColor = 'rgba(15, 23, 42, .10)';
+          ctx.shadowBlur = 18;
+          ctx.shadowOffsetY = 6;
+          drawRoundedRect(ctx, 448, 40, 272, 400, 22);
           ctx.fill();
           ctx.shadowColor = 'transparent';
-
-          // Border for QR card
-          ctx.strokeStyle = accentColor;
-          ctx.lineWidth = 3;
-          drawRoundedRect(ctx, 365, 30, 245, 340, 20);
-          ctx.stroke();
-
-          // QR Code Image
-          ctx.drawImage(qrImg, 382, 50, 210, 210);
-
-          // Scanner calls
-          ctx.fillStyle = '#1e293b';
+          ctx.shadowOffsetY = 0;
+          ctx.fillStyle = '#f7faf8';
+          drawRoundedRect(ctx, 472, 62, 224, 224, 18);
+          ctx.fill();
+          ctx.drawImage(qrImg, 486, 76, 196, 196);
+          ctx.fillStyle = '#1c2920';
+          drawFittedText(ctx, label || 'SCAN TO ORDER', 584, 324, 230, 18, '800');
+          ctx.fillStyle = '#748178';
+          ctx.font = '500 12px system-ui, -apple-system, sans-serif';
           ctx.textAlign = 'center';
-          ctx.font = '900 13px system-ui, -apple-system, sans-serif';
-          ctx.fillText(label.toUpperCase(), 488, 295);
-
-          ctx.fillStyle = '#64748b';
-          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
-          ctx.fillText('Scan with Camera / No App Required', 488, 320);
-
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = 'bold 9px system-ui, -apple-system, sans-serif';
-          ctx.fillText('POWERED BY STITCH MENU', 488, 345);
+          ctx.fillText('Scan with your camera - No app needed', 584, 351);
+          ctx.fillStyle = '#a0aaa3';
+          ctx.font = '600 10px system-ui, -apple-system, sans-serif';
+          ctx.fillText('DIGITAL MENU', 584, 398);
         }
       };
     } catch (err) {
@@ -291,28 +268,29 @@ export default function QRGenerator() {
   };
 
   const TEMPLATES = [
-    { id: 'minimal', label: 'Minimal', icon: QrCode },
-    { id: 'tent',    label: 'Tent Card', icon: LayoutTemplate },
-    { id: 'banner',  label: 'Table Stand', icon: AlignJustify },
+    { id: 'minimal', label: 'Minimal', detail: 'QR only', icon: QrCode },
+    { id: 'tent', label: 'Tent card', detail: 'Portrait table display', icon: LayoutTemplate },
+    { id: 'banner', label: 'Table stand', detail: 'Landscape counter display', icon: AlignJustify },
   ];
+  const selectedTemplate = TEMPLATES.find(item => item.id === template) || TEMPLATES[1];
 
   return (
-    <div className="min-h-screen bg-[#f7f9fb] text-[#191c1e] font-sans flex flex-col md:flex-row text-left">
+    <div className="min-h-screen bg-[#f4f6f4] font-sans text-left text-[#191c1e] flex flex-col md:flex-row">
 
       {/* ── Settings Panel ── */}
-      <aside className="w-full md:w-[340px] bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+      <aside className="z-10 flex w-full flex-col overflow-y-auto border-r border-slate-200 bg-white shadow-xl shadow-slate-900/[0.04] md:w-[360px]">
 
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
           <button
             onClick={() => navigate('/admin')}
-            className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 cursor-pointer transition-colors"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-800"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
-            <h1 className="font-bold text-sm text-slate-800">QR Design Studio</h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Canvas Generator</p>
+            <h1 className="text-sm font-bold text-slate-900">QR Design Studio</h1>
+            <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Make your menu stand out</p>
           </div>
         </div>
 
@@ -321,13 +299,13 @@ export default function QRGenerator() {
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[#003b1b]"></div>
           </div>
         ) : (
-          <div className="flex-1 p-5 space-y-5 text-xs">
+          <div className="flex-1 space-y-6 p-5 text-xs">
 
             {/* Table Select */}
             <div>
-              <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Table / Location</label>
+              <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Table / Location</label>
               <select
-                className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none bg-white text-slate-700 font-medium text-xs focus:ring-1 focus:ring-[#003b1b]"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-emerald-800 focus:bg-white focus:ring-4 focus:ring-emerald-900/10"
                 value={selectedTable?._id || ''}
                 onChange={(e) => setSelectedTable(tables.find(t => t._id === e.target.value))}
               >
@@ -337,20 +315,28 @@ export default function QRGenerator() {
 
             {/* Template */}
             <div>
-              <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Layout Template</label>
-              <div className="grid grid-cols-3 gap-2">
-                {TEMPLATES.map(({ id, label, icon: Icon }) => (
+              <div className="mb-2 flex items-center justify-between">
+                <label className="block text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Choose a layout</label>
+                <span className="text-[10px] font-medium text-slate-400">3 styles</span>
+              </div>
+              <div className="space-y-2">
+                {TEMPLATES.map(({ id, label: templateLabel, detail, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => setTemplate(id)}
-                    className={`py-2.5 px-1 border rounded-xl font-semibold flex flex-col items-center gap-1.5 cursor-pointer transition-all ${
+                    className={`flex w-full cursor-pointer items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
                       template === id
-                        ? 'border-[#003b1b] bg-[#003b1b]/5 text-[#003b1b]'
-                        : 'border-slate-200 hover:bg-slate-50 text-slate-500'
+                        ? 'border-emerald-900/25 bg-emerald-50/70 text-emerald-950 shadow-sm ring-1 ring-emerald-900/5'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                     }`}
+                    aria-pressed={template === id}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span className="text-[9px]">{label}</span>
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${template === id ? 'bg-emerald-900 text-white' : 'bg-slate-100 text-slate-500'}`}><Icon className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-bold">{templateLabel}</span>
+                      <span className={`mt-0.5 block text-[10px] font-medium ${template === id ? 'text-emerald-800/70' : 'text-slate-400'}`}>{detail}</span>
+                    </span>
+                    <span className={`h-4 w-4 shrink-0 rounded-full border-[5px] ${template === id ? 'border-emerald-800 bg-white' : 'border-slate-300 bg-white'}`} />
                   </button>
                 ))}
               </div>
@@ -360,19 +346,19 @@ export default function QRGenerator() {
             {template !== 'minimal' && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Scan Callout Text</label>
+                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Scan callout text</label>
                   <input
                     type="text"
-                    className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none text-slate-700 font-medium focus:ring-1 focus:ring-[#003b1b]"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-700 outline-none focus:border-emerald-800 focus:ring-4 focus:ring-emerald-900/10"
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-1.5">Table Label Prefix</label>
+                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Table label prefix</label>
                   <input
                     type="text"
-                    className="w-full h-9 px-3 border border-slate-200 rounded-lg outline-none text-slate-700 font-medium focus:ring-1 focus:ring-[#003b1b]"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-xs font-medium text-slate-700 outline-none focus:border-emerald-800 focus:ring-4 focus:ring-emerald-900/10"
                     value={footerLabel}
                     onChange={(e) => setFooterLabel(e.target.value)}
                   />
@@ -381,9 +367,9 @@ export default function QRGenerator() {
             )}
 
             {/* Colors */}
-            <div className="border-t border-slate-100 pt-4 grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-5">
               <div>
-                <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">Brand Color</label>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Brand color</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="color" value={accentColor}
@@ -394,7 +380,7 @@ export default function QRGenerator() {
                 </div>
               </div>
               <div>
-                <label className="block text-[10px] text-slate-400 font-semibold uppercase tracking-wider mb-2">QR Color</label>
+                <label className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">QR color</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="color" value={fgColor}
@@ -410,11 +396,11 @@ export default function QRGenerator() {
         )}
 
         {/* Download Button */}
-        <div className="p-5 border-t border-slate-100">
+        <div className="sticky bottom-0 border-t border-slate-100 bg-white p-5">
           <button
             onClick={handleDownload}
             disabled={!selectedTable}
-            className="w-full h-10 bg-[#003b1b] hover:bg-[#166534] disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#073b25] text-sm font-bold text-white shadow-lg shadow-emerald-950/15 transition hover:bg-[#0b5133] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
             Download PNG
@@ -423,16 +409,21 @@ export default function QRGenerator() {
       </aside>
 
       {/* ── Canvas Preview ── */}
-      <main className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900 overflow-auto gap-4">
-        <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest">Live Preview</p>
-        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700/50 shadow-2xl flex items-center justify-center">
+      <main className="flex min-h-[70vh] flex-1 flex-col items-center justify-center gap-5 overflow-auto bg-[#e9eeeb] p-5 sm:p-8">
+        <div className="flex w-full max-w-4xl items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Live preview</p>
+            <p className="mt-1 text-sm font-semibold text-slate-800">{selectedTemplate.label} <span className="font-normal text-slate-500">· {selectedTable?.name || 'Select a table'}</span></p>
+          </div>
+          <span className="rounded-full border border-white bg-white/80 px-3 py-1.5 text-[10px] font-semibold text-slate-500 shadow-sm">PNG export · High resolution</span>
+        </div>
+        <div className="flex min-h-[340px] w-full max-w-4xl items-center justify-center overflow-auto rounded-3xl border border-white/80 bg-[linear-gradient(135deg,#f8faf9_0%,#e8efea_100%)] p-5 shadow-inner sm:p-8">
           <canvas
             ref={canvasRef}
-            className="max-w-full rounded-xl shadow-lg bg-white"
-            style={{ maxHeight: '72vh' }}
+            className="max-h-[72vh] max-w-full rounded-xl bg-white shadow-2xl shadow-slate-900/20"
           />
         </div>
-        <p className="text-slate-600 text-[10px]">Updates in real-time · Exported PNG matches canvas 1:1</p>
+        <p className="text-center text-[10px] font-medium text-slate-500">Preview updates as you customize - download the PNG when ready</p>
       </main>
     </div>
   );
