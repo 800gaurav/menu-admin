@@ -43,7 +43,7 @@ export default function KitchenLogin() {
       localStorage.setItem('restaurant_slug', res.restaurantSlug);
       
       // Navigate to kitchen panel
-      navigate(`/kitchen/${slug}`);
+      navigate(`/admin/kitchen/${slug}`);
     } catch (err) {
       setError(err.message || 'Incorrect PIN. Please try again.');
       setPin('');

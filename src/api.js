@@ -384,7 +384,7 @@ export const api = {
 
   // Kitchen Panel Endpoints
   kitchen: {
-    getOrders: () => apiFetch('/orders?live=true'),
+    getOrders: () => apiFetch('/orders?live=true', { cache: 'no-store' }),
     getActiveCalls: () => apiFetch('/waiter/calls').catch(() => []),
     updateOrderStatus: (id, status, servedBy = null) => apiFetch(`/orders/${id}/status`, {
       method: 'PATCH',

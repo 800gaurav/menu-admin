@@ -3,9 +3,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import io from 'socket.io-client';
 import { api, removeRestaurantToken, BACKEND_URL } from '../api';
 
-const ADMIN_URL = (import.meta.env.VITE_ADMIN_URL || window.location.origin).replace(/\/+$/, '');
-const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
-const WAITER_URL = (import.meta.env.VITE_WAITER_URL || window.location.origin).replace(/\/+$/, '');
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const ADMIN_URL = (import.meta.env.VITE_ADMIN_URL || (isLocal ? 'http://localhost:5175' : window.location.origin)).replace(/\/+$/, '');
+const USER_URL = (import.meta.env.VITE_USER_URL || (isLocal ? 'http://localhost:5173' : window.location.origin)).replace(/\/+$/, '');
+const WAITER_URL = (import.meta.env.VITE_WAITER_URL || (isLocal ? 'http://localhost:5174' : window.location.origin)).replace(/\/+$/, '');
 import BillPrint from './BillPrint';
 import { 
   TrendingUp, 
@@ -24,7 +25,6 @@ import {
   Menu,
   ChevronLeft,
   ChevronRight,
-  Download,
   Globe,
   Volume2,
   VolumeX,
@@ -200,63 +200,40 @@ export default function RestaurantAdminDashboard() {
   const newOrderToastTimeout = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isAppInstalled, setIsAppInstalled] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [logoUploadStatus, setLogoUploadStatus] = useState({ loading: false, error: null, success: null });
-  const [pwaDiagnostics, setPwaDiagnostics] = useState({
-    swRegistered: 'Checking...',
-    swScope: 'Checking...',
-    manifestUrl: 'Checking...',
-    activeWorker: 'Checking...'
-  });
   const loadedTabs = useRef(new Set());
   const socketRef = useRef(null);
   const handledNewOrderIdsRef = useRef(new Set());
+  const audioContextRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+          audioContextRef.current = new AudioContextClass();
+        }
+        if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
+      } catch (error) {
+        console.warn('Could not unlock order alert audio:', error);
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
 
   useEffect(() => {
     fetchInitialData();
     requestFirebaseNotificationPermission('restaurantadmin');
     
-    const handler = (e) => {
-      console.log('beforeinstallprompt event fired inside AdminDashboard!');
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    // Diagnostics checks
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        if (regs.length === 0) {
-          setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'No active service workers registered for this origin.' }));
-        } else {
-          const details = regs.map(r => `Scope: ${r.scope} (Active: ${r.active ? 'Yes' : 'No'})`).join('; ');
-          setPwaDiagnostics(prev => ({
-            ...prev,
-            swRegistered: `Yes (${regs.length} found)`,
-            swScope: details,
-            activeWorker: regs[0].active ? 'Active' : 'Not active / waiting'
-          }));
-        }
-      });
-    } else {
-      setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'ServiceWorker not supported in this browser!' }));
-    }
-
-    // Detect if already installed (standalone mode)
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-      setIsAppInstalled(true);
-    }
-
-    const installedHandler = () => setIsAppInstalled(true);
-    window.addEventListener('appinstalled', installedHandler);
-
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', installedHandler);
     };
   }, []);
 
@@ -275,7 +252,6 @@ export default function RestaurantAdminDashboard() {
       link.crossOrigin = 'anonymous';
       link.href = `${BACKEND_URL}/api/manifest/${restaurant.slug}/admin?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
-      setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
     }
     if (restaurant?.logo) {
       let iconLink = document.querySelector("link[rel~='icon']");
@@ -405,7 +381,10 @@ export default function RestaurantAdminDashboard() {
   const playNotificationSound = (force = false) => {
     if (!soundEnabled && !force) return;
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const audioCtx = audioContextRef.current || new AudioContextClass();
+      audioContextRef.current = audioCtx;
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
@@ -565,14 +544,6 @@ export default function RestaurantAdminDashboard() {
     } catch (err) {
       console.error(err);
     }
-  };
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User choice for PWA install: ${outcome}`);
-    setDeferredPrompt(null);
   };
 
   const handleLogout = () => {
@@ -952,7 +923,7 @@ export default function RestaurantAdminDashboard() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`bg-[#0f172a] flex flex-col fixed h-full shadow-2xl z-40 text-left border-r border-slate-800/90 transition-all duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 ${isSidebarCollapsed ? 'w-[72px]' : 'w-[250px]'}`}>
+      <aside className={`bg-[#0f172a] flex flex-col fixed inset-y-0 left-0 h-dvh max-h-dvh overflow-hidden shadow-2xl z-40 text-left border-r border-slate-800/90 transition-all duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 ${isSidebarCollapsed ? 'w-[72px]' : 'w-[250px]'}`}>
         
         {/* Header Block */}
         <div className={`px-4 py-4 flex items-center border-b border-slate-800/90 bg-slate-950/40 ${isSidebarCollapsed ? 'justify-center' : 'justify-between'}`}>
@@ -1002,7 +973,7 @@ export default function RestaurantAdminDashboard() {
         </div>
         
         {/* Nav Links */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 hide-scrollbar">
+        <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-6 hide-scrollbar">
           
           {/* Main Controls */}
           <div>
@@ -1092,7 +1063,7 @@ export default function RestaurantAdminDashboard() {
                   </div>
                 ) : restaurant?.slug ? (
                   <a 
-                    href={`${ADMIN_URL}/kitchen/${restaurant.slug}`} 
+                    href={`${ADMIN_URL}/admin/kitchen/${restaurant.slug}`} 
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setSidebarOpen(false)}
@@ -1187,26 +1158,16 @@ export default function RestaurantAdminDashboard() {
           </div>
         </nav>
 
-        {/* PWA Install Button */}
-        {!isAppInstalled && (
-          <div className="px-3 py-2.5 border-t border-slate-800/80 bg-slate-950/20">
+        {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
+          <div className="px-3 pb-2.5 bg-slate-950/20">
             <button
-              onClick={() => {
-                if (deferredPrompt) {
-                  handleInstallClick();
-                } else {
-                  setShowInstallGuide(true);
-                }
-              }}
-              className={`w-full flex items-center gap-2.5 transition-all duration-200 rounded-xl group ${
-                deferredPrompt
-                  ? 'text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/40 bg-emerald-500/10'
-                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-white border border-slate-700/80 bg-slate-900/60'
-              } cursor-pointer ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2'}`}
-              title={deferredPrompt ? 'Install App' : 'How to Install'}
+              type="button"
+              onClick={() => requestFirebaseNotificationPermission('restaurantadmin')}
+              className={`w-full flex items-center gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 cursor-pointer ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2'}`}
+              title="Enable new order notifications"
             >
-              <Download className={`w-4 h-4 shrink-0 ${deferredPrompt ? 'text-emerald-400' : 'text-slate-400'}`} />
-              {!isSidebarCollapsed && <span className="text-[11.5px] font-bold">{deferredPrompt ? 'Install App' : 'Install Guide'}</span>}
+              <Bell className="w-4 h-4 shrink-0" />
+              {!isSidebarCollapsed && <span className="text-[11.5px] font-bold">Enable Notifications</span>}
             </button>
           </div>
         )}
@@ -1246,12 +1207,22 @@ export default function RestaurantAdminDashboard() {
             </button>
             <span className="font-extrabold text-slate-900 text-sm">{restaurant?.name || 'Dashboard'}</span>
           </div>
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm" aria-label={`${stats.newOrdersCount || 0} new orders`} title={`${stats.newOrdersCount || 0} new orders`}>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('orders');
+              localStorage.setItem('adminActiveTab', 'orders');
+              setSidebarOpen(false);
+            }}
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 cursor-pointer"
+            aria-label={`Open live orders, ${stats.newOrdersCount || 0} new orders`}
+            title="Open Live Orders"
+          >
             <Bell className="h-5 w-5" />
             <span className="absolute -right-1.5 -top-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-rose-600 px-1 text-[9px] font-black leading-none text-white">
               {(stats.newOrdersCount || 0) > 99 ? '99+' : (stats.newOrdersCount || 0)}
             </span>
-          </div>
+          </button>
         </div>
 
         {loading ? (
@@ -1452,7 +1423,6 @@ export default function RestaurantAdminDashboard() {
           </div>
         </div>
       )}
-
       {/* Real-time New Order Floating Toast Banner */}
       {newOrderToast && (
         <div className="fixed bottom-5 right-5 z-50 animate-slideUp max-w-sm w-[92vw] sm:w-88 bg-slate-900 text-white rounded-2xl shadow-2xl p-4 border border-slate-700/80 flex items-start gap-3.5 backdrop-blur-md">

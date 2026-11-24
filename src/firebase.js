@@ -27,7 +27,14 @@ export const requestFirebaseNotificationPermission = async (role = 'restaurant')
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
       console.log('Notification permission granted.');
-      const registration = await navigator.serviceWorker.ready;
+      // Use the Firebase worker explicitly. `serviceWorker.ready` may resolve
+      // to the app's PWA worker (which has a more specific scope) and leave
+      // FCM pushes without a worker that can receive them when the panel is closed.
+      const registration = await navigator.serviceWorker.register(
+        `${import.meta.env.BASE_URL}firebase-messaging-sw.js`,
+        { scope: `${import.meta.env.BASE_URL}fcm/` }
+      );
+      await navigator.serviceWorker.ready;
       const token = await getToken(messaging, {
         serviceWorkerRegistration: registration
       });

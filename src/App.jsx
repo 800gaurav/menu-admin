@@ -41,6 +41,7 @@ const RequireRestaurantAuth = ({ children }) => {
     const params = new URLSearchParams(window.location.search);
     const tokenParam = params.get('token');
     if (tokenParam) {
+      restaurantAuthCheck = null; // Clear cached check if incoming new token
       localStorage.setItem('restaurant_token', tokenParam);
       const idParam = params.get('restaurant_id');
       const slugParam = params.get('restaurant_slug');
@@ -107,7 +108,12 @@ const RequireKitchenAuth = ({ children }) => {
   // Clear mismatched kitchen token, but don't touch admin token
   localStorage.removeItem('kitchen_token');
   localStorage.removeItem('kitchen_slug');
-  return <Navigate to={`/kitchen/${slug}/login`} replace />;
+  return <Navigate to={`/admin/kitchen/${slug}/login`} replace />;
+};
+
+const ScopedKitchenRouteRedirect = ({ login = false }) => {
+  const { slug } = useParams();
+  return <Navigate to={`/admin/kitchen/${slug}${login ? '/login' : ''}`} replace />;
 };
 
 export default function App() {
@@ -118,14 +124,18 @@ export default function App() {
         <Route path="/admin/login" element={<RestaurantAdminLogin />} />
         <Route path="/admin/wizard" element={<Navigate to="/admin" replace />} />
         <Route path="/admin" element={<RequireRestaurantAuth><RestaurantAdminDashboard /></RequireRestaurantAuth>} />
+        <Route path="/admin/" element={<RequireRestaurantAuth><RestaurantAdminDashboard /></RequireRestaurantAuth>} />
         <Route path="/admin/qr-generator" element={<RequireRestaurantAuth><QRGenerator /></RequireRestaurantAuth>} />
 
         {/* Counter Billing Panel */}
         <Route path="/counter/:slug" element={<RequireCounterAuth><CounterPanel /></RequireCounterAuth>} />
 
         {/* Kitchen Panel View */}
-        <Route path="/kitchen/:slug" element={<RequireKitchenAuth><KitchenPanel /></RequireKitchenAuth>} />
-        <Route path="/kitchen/:slug/login" element={<KitchenLogin />} />
+        <Route path="/admin/kitchen/:slug" element={<RequireKitchenAuth><KitchenPanel /></RequireKitchenAuth>} />
+        <Route path="/admin/kitchen/:slug/login" element={<KitchenLogin />} />
+        {/* Keep old kitchen URLs working while moving KDS into the PWA scope. */}
+        <Route path="/kitchen/:slug" element={<ScopedKitchenRouteRedirect />} />
+        <Route path="/kitchen/:slug/login" element={<ScopedKitchenRouteRedirect login />} />
 
         {/* Invoice Bill Print */}
         <Route path="/bill-print/:orderId" element={<BillPrint />} />

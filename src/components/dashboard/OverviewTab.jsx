@@ -17,7 +17,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
-const USER_URL = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const USER_URL = (import.meta.env.VITE_USER_URL || (isLocal ? 'http://localhost:5173' : window.location.origin)).replace(/\/+$/, '');
 
 // Register Chart.js modules
 ChartJS.register(

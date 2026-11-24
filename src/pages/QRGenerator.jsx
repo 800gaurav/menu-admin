@@ -61,7 +61,8 @@ export default function QRGenerator() {
     const ctx = canvas.getContext('2d');
 
     // 1. Resolve Target URL
-    const userUrl = (import.meta.env.VITE_USER_URL || window.location.origin).replace(/\/+$/, '');
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const userUrl = (import.meta.env.VITE_USER_URL || (isLocal ? 'http://localhost:5173' : window.location.origin)).replace(/\/+$/, '');
     const targetUrl = selectedTable.targetUrl || `${userUrl}/menu/${restaurant.slug}?table=${encodeURIComponent(selectedTable.name)}`;
 
     const drawRoundedRect = (c, x, y, width, height, radius) => {

@@ -6,7 +6,7 @@ import BillPrint from './BillPrint';
 import {
   Receipt, RefreshCw, LogOut, CheckCircle, Banknote,
   TrendingUp, Printer, Check, Clock, AlertCircle,
-  UtensilsCrossed, User, ChefHat, Wifi, WifiOff, Download
+  UtensilsCrossed, User, ChefHat, Wifi, WifiOff
 } from 'lucide-react';
 import { requestFirebaseNotificationPermission } from '../firebase';
 export default function CounterPanel() {
@@ -67,15 +67,6 @@ export default function CounterPanel() {
   const [isConnected, setIsConnected] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isAppInstalled, setIsAppInstalled] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [pwaDiagnostics, setPwaDiagnostics] = useState({
-    swRegistered: 'Checking...',
-    swScope: 'Checking...',
-    manifestUrl: 'Checking...',
-    activeWorker: 'Checking...'
-  });
   const socketRef = useRef(null);
 
   useEffect(() => {
@@ -95,46 +86,10 @@ export default function CounterPanel() {
       link.crossOrigin = 'anonymous';
       link.href = `${BACKEND_URL}/api/manifest/${slug}/counter?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
-      setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
-    }
-
-    // Detect if already installed
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-      setIsAppInstalled(true);
-    }
-    const installedHandler = () => setIsAppInstalled(true);
-    window.addEventListener('appinstalled', installedHandler);
-
-    const handler = (e) => {
-      console.log('beforeinstallprompt event fired inside CounterPanel!');
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    // Diagnostics checks
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        if (regs.length === 0) {
-          setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'No active service workers registered for this origin.' }));
-        } else {
-          const details = regs.map(r => `Scope: ${r.scope} (Active: ${r.active ? 'Yes' : 'No'})`).join('; ');
-          setPwaDiagnostics(prev => ({
-            ...prev,
-            swRegistered: `Yes (${regs.length} found)`,
-            swScope: details,
-            activeWorker: regs[0].active ? 'Active' : 'Not active / waiting'
-          }));
-        }
-      });
-    } else {
-      setPwaDiagnostics(prev => ({ ...prev, swRegistered: 'ServiceWorker not supported in this browser!' }));
     }
 
     return () => { 
       if (socketRef.current) socketRef.current.disconnect(); 
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', installedHandler);
     };
   }, [slug]);
 
@@ -248,14 +203,6 @@ export default function CounterPanel() {
 
   const handleOpenPrint = (order) => { setSelectedOrder(order); setIsPrintModalOpen(true); };
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User choice for Counter PWA install: ${outcome}`);
-    setDeferredPrompt(null);
-  };
-
   const handleLogout = () => { localStorage.removeItem('restaurant_token'); navigate('/admin/login'); };
 
   const billRequestedCount = orders.filter(o => o.billRequested).length;
@@ -280,26 +227,6 @@ export default function CounterPanel() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {!isAppInstalled ? (
-            <button
-              type="button"
-              onClick={() => { if (deferredPrompt) { handleInstallClick(); } else { setShowInstallGuide(true); } }}
-              className={`h-9 px-4 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all border ${
-                deferredPrompt
-                  ? 'border-emerald-500/20 bg-emerald-500/10 hover:bg-emerald-600 text-emerald-400 hover:text-white animate-pulse'
-                  : 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-              }`}
-              title={deferredPrompt ? 'Install App' : 'How to Install'}
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{deferredPrompt ? 'Install App' : 'Install Guide'}</span>
-            </button>
-          ) : (
-            <div className="h-9 px-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-xs font-semibold flex items-center gap-1.5">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              <span>Installed ✓</span>
-            </div>
-          )}
           <button
             type="button"
             onClick={fetchCounterData}
@@ -318,51 +245,6 @@ export default function CounterPanel() {
           </button>
         </div>
       </header>
-
-      {/* Install Guide Modal */}
-      {showInstallGuide && (
-        <div className="fixed inset-0 z-[200] bg-black/70 flex items-end sm:items-center justify-center p-4" onClick={() => setShowInstallGuide(false)}>
-          <div className="bg-[#1c2128] border border-white/10 rounded-2xl p-6 max-w-sm w-full text-left" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <Download className="w-4 h-4 text-emerald-400" />
-                </div>
-                <h3 className="text-white font-bold text-sm">Install Counter App</h3>
-              </div>
-              <button onClick={() => setShowInstallGuide(false)} className="text-slate-400 hover:text-white cursor-pointer text-lg">✕</button>
-            </div>
-            <p className="text-slate-400 text-xs mb-4">Billing counter app install karne ke liye:</p>
-            <div className="space-y-3">
-              <div className="flex gap-3 items-start">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
-                <p className="text-slate-300 text-xs"><strong>Chrome / Edge:</strong> Address bar mein ⊕ install icon click karein, ya browser menu → "Install app"</p>
-              </div>
-              <div className="flex gap-3 items-start">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
-                <p className="text-slate-300 text-xs"><strong>Android:</strong> Chrome menu ⋮ → "Add to Home Screen"</p>
-              </div>
-              <div className="flex gap-3 items-start">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
-                <p className="text-slate-300 text-xs"><strong>iPhone (Safari):</strong> Share icon → "Add to Home Screen"</p>
-              </div>
-            </div>
-
-            {/* PWA System Diagnostics Accordion */}
-            <details className="mt-4 pt-3 border-t border-white/5 text-[10px]">
-              <summary className="text-slate-400 font-bold cursor-pointer hover:text-slate-200 select-none">⚙️ PWA Diagnostics (Developer Info)</summary>
-              <div className="mt-2 space-y-1.5 bg-black/30 p-2.5 rounded-lg font-mono text-[9px] text-slate-400 border border-white/5 break-all">
-                <div><strong>SW Registered:</strong> {pwaDiagnostics.swRegistered}</div>
-                <div><strong>Active Worker:</strong> {pwaDiagnostics.activeWorker}</div>
-                <div><strong>Manifest API:</strong> {pwaDiagnostics.manifestUrl}</div>
-                <div><strong>Registered SW List:</strong> {pwaDiagnostics.swScope}</div>
-              </div>
-            </details>
-
-            <p className="text-slate-500 text-[10px] mt-4 border-t border-white/5 pt-3">Cashier screen full-screen mode mein browser bar ke bina chalegi</p>
-          </div>
-        </div>
-      )}
 
       {/* Main */}
       <main className="flex-1 p-5 max-w-7xl mx-auto w-full space-y-5 text-left">

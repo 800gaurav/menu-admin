@@ -14,7 +14,7 @@ export default defineConfig({
         enabled: true,        // ← Works in dev mode too!
         type: 'module'
       },
-      includeAssets: ['icon-512.png'],
+      includeAssets: ['icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'MenuOS Admin Dashboard',
         short_name: 'AdminOS',
@@ -23,17 +23,17 @@ export default defineConfig({
         background_color: '#0d1117',
         display: 'standalone',
         orientation: 'any',
-        scope: '/',
-        start_url: '/',
+        scope: '/admin/',
+        start_url: '/admin/',
         icons: [
           {
-            src: '/icon-512.png',
+            src: '/admin/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/icon-512.png',
+            src: '/admin/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'

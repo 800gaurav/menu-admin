@@ -1,3 +1,25 @@
+// Register before loading Firebase Messaging; the SDK installs its own click
+// handler and may otherwise take over notification clicks.
+self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  const targetUrl = new URL(
+    data.clickPath || (data.restaurantSlug ? `/admin/kitchen/${encodeURIComponent(data.restaurantSlug)}` : '/admin/'),
+    self.location.origin
+  );
+  if (data.orderId) targetUrl.searchParams.set('orderId', data.orderId);
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && new URL(client.url).origin === targetUrl.origin && 'focus' in client) {
+          return client.navigate(targetUrl.href).then((navigatedClient) => navigatedClient?.focus() || client.focus());
+        }
+      }
+      if (clients.openWindow) return clients.openWindow(targetUrl.href);
+    })
+  );
+});
+
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
@@ -13,6 +35,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
+const appIcon = new URL('./icon-512.png', self.location.href).toString();
 
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
@@ -33,8 +56,8 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.data?.title || 'Stitch Admin Panel';
   const notificationOptions = {
     body: payload.data?.body || '',
-    icon: '/icon-512.png',
-    badge: '/icon-512.png',
+    icon: appIcon,
+    badge: appIcon,
     tag: tag,
     renotify: false,
     data: payload.data
@@ -43,28 +66,20 @@ messaging.onBackgroundMessage((payload) => {
   self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if (client.url && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow('/');
-      }
-    })
-  );
-});
-
 // PWA Caching and Fetch Handler
 const CACHE_NAME = 'menuos-admin-cache-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html'
 ];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

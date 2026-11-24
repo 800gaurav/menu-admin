@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 import { api, BACKEND_URL, API_BASE } from '../api';
 import {
   ChefHat, ArrowLeft, Volume2, VolumeX, Maximize2,
-  Clock, UtensilsCrossed, Flame, Zap, Download, LogOut,
+  Clock, UtensilsCrossed, Flame, Zap, LogOut, BellRing,
   SlidersHorizontal, CheckCheck, RefreshCw, AlertTriangle, Layers
 } from 'lucide-react';
 import { requestFirebaseNotificationPermission } from '../firebase';
@@ -108,22 +108,16 @@ export default function KitchenPanel() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isAppInstalled, setIsAppInstalled] = useState(false);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [pwaDiagnostics, setPwaDiagnostics] = useState({
-    swRegistered: 'Checking...',
-    swScope: 'Checking...',
-    manifestUrl: 'Checking...',
-    activeWorker: 'Checking...'
-  });
   const [showHistory, setShowHistory] = useState(false);
   const socketRef = useRef(null);
+  const orderSyncRequestRef = useRef(null);
+  const orderSyncQueuedRef = useRef(false);
+  const syncKitchenOrdersRef = useRef(null);
 
   useEffect(() => {
     const token = localStorage.getItem('restaurant_token') || localStorage.getItem('kitchen_token');
     if (!token) {
-      navigate(`/kitchen/${slug}/login`);
+      navigate(`/admin/kitchen/${slug}/login`);
       return;
     }
     fetchInitialData();
@@ -139,42 +133,66 @@ export default function KitchenPanel() {
       link.crossOrigin = 'anonymous';
       link.href = `${API_BASE}/manifest/${slug}/kitchen?origin=${window.location.origin}&t=${Date.now()}`;
       document.head.appendChild(link);
-      setPwaDiagnostics(prev => ({ ...prev, manifestUrl: link.href }));
-    }
-
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-      setIsAppInstalled(true);
-    }
-    const installedHandler = () => setIsAppInstalled(true);
-    window.addEventListener('appinstalled', installedHandler);
-
-    const handler = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        if (regs.length > 0) {
-          const details = regs.map(r => r.scope).join(', ');
-          setPwaDiagnostics(prev => ({
-            ...prev,
-            swRegistered: `Registered (${regs.length} worker)`,
-            swScope: details,
-            activeWorker: regs[0].active ? 'Active' : 'Not active'
-          }));
-        }
-      });
     }
 
     return () => {
       clearInterval(clock);
       if (socketRef.current) socketRef.current.disconnect();
-      window.removeEventListener('beforeinstallprompt', handler);
-      window.removeEventListener('appinstalled', installedHandler);
     };
   }, [slug]);
+
+  // Socket.IO cannot replay events missed while the panel is closed or offline.
+  // Reconcile from the server on reconnect/resume and periodically while visible.
+  const syncKitchenOrders = useCallback(async () => {
+    if (orderSyncRequestRef.current) {
+      // A refresh requested after joining the socket must run after any older
+      // request, so its snapshot cannot miss an order created in that gap.
+      orderSyncQueuedRef.current = true;
+      return orderSyncRequestRef.current;
+    }
+
+    const request = api.kitchen.getOrders()
+      .then((kitchenOrders) => {
+        if (Array.isArray(kitchenOrders)) setOrders(kitchenOrders);
+      })
+      .catch((error) => {
+        console.warn('Could not sync kitchen orders:', error);
+      });
+
+    orderSyncRequestRef.current = request;
+    try {
+      await request;
+    } finally {
+      if (orderSyncRequestRef.current === request) orderSyncRequestRef.current = null;
+      if (orderSyncQueuedRef.current) {
+        orderSyncQueuedRef.current = false;
+        if (document.visibilityState === 'visible') {
+          window.setTimeout(() => syncKitchenOrdersRef.current?.(), 0);
+        }
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    syncKitchenOrdersRef.current = syncKitchenOrders;
+  }, [syncKitchenOrders]);
+
+  useEffect(() => {
+    const syncWhenVisible = () => {
+      if (document.visibilityState === 'visible') syncKitchenOrdersRef.current?.();
+    };
+    const poll = window.setInterval(syncWhenVisible, 15000);
+    document.addEventListener('visibilitychange', syncWhenVisible);
+    window.addEventListener('focus', syncWhenVisible);
+    window.addEventListener('pageshow', syncWhenVisible);
+
+    return () => {
+      window.clearInterval(poll);
+      document.removeEventListener('visibilitychange', syncWhenVisible);
+      window.removeEventListener('focus', syncWhenVisible);
+      window.removeEventListener('pageshow', syncWhenVisible);
+    };
+  }, []);
 
   const playChime = () => {
     if (!soundEnabled) return;
@@ -212,6 +230,8 @@ export default function KitchenPanel() {
     socket.on('connect', () => {
       console.log('Kitchen socket connected, joining room for:', rId);
       socket.emit('joinKitchen', rId);
+      // Fetch after joining so orders placed during a disconnect are not missed.
+      syncKitchenOrdersRef.current?.();
     });
 
     const handledOrderIds = new Set();
@@ -286,12 +306,7 @@ export default function KitchenPanel() {
       }
       setRestaurant(profile);
 
-      try {
-        const kitchenOrders = await api.kitchen.getOrders();
-        setOrders(Array.isArray(kitchenOrders) ? kitchenOrders : []);
-      } catch (err) {
-        console.error('Failed to get kitchen orders:', err);
-      }
+      await syncKitchenOrders();
 
       const targetRestId = profile?._id || storedRestId;
       if (targetRestId) {
@@ -350,14 +365,6 @@ export default function KitchenPanel() {
     return orders.filter(o => ['New', 'Accepted', 'Preparing', 'Ready'].includes(o.status));
   }, [orders]);
 
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log(`User choice for KDS PWA install: ${outcome}`);
-    setDeferredPrompt(null);
-  };
-
   const fullScreen = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
     else document.exitFullscreen?.();
@@ -396,7 +403,7 @@ export default function KitchenPanel() {
           onClick={() => {
             localStorage.removeItem('kitchen_token');
             localStorage.removeItem('kitchen_slug');
-            navigate(`/kitchen/${slug}/login`);
+            navigate(`/admin/kitchen/${slug}/login`);
           }}
           className="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-200 hover:bg-slate-700 font-bold text-xs cursor-pointer"
         >
@@ -471,20 +478,14 @@ export default function KitchenPanel() {
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
 
-          {/* PWA Install Button */}
-          {!isAppInstalled && (
+          {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
             <button
               type="button"
-              onClick={() => { if (deferredPrompt) { handleInstallClick(); } else { setShowInstallGuide(true); } }}
-              className={`h-8 sm:h-9 px-2.5 sm:px-3 border rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors text-xs font-bold ${
-                deferredPrompt
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 animate-pulse'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-              title="Install Fullscreen KDS App"
+              onClick={() => requestFirebaseNotificationPermission('kitchen')}
+              className="h-8 w-8 sm:h-9 sm:w-9 border border-amber-200 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center cursor-pointer"
+              title="Enable kitchen order notifications"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">{deferredPrompt ? 'Install App' : 'App Guide'}</span>
+              <BellRing className="w-4 h-4" />
             </button>
           )}
 
@@ -503,7 +504,7 @@ export default function KitchenPanel() {
               onClick={() => {
                 localStorage.removeItem('kitchen_token');
                 localStorage.removeItem('kitchen_slug');
-                navigate(`/kitchen/${slug}/login`);
+                navigate(`/admin/kitchen/${slug}/login`);
               }}
               className="h-8 sm:h-9 px-2.5 sm:px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl cursor-pointer flex items-center gap-1.5 transition-colors text-xs font-bold shadow-xs"
               title="Logout Kitchen"
@@ -785,43 +786,6 @@ export default function KitchenPanel() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Install Guide Modal ── */}
-      {showInstallGuide && (
-        <div className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowInstallGuide(false)}>
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl p-5 sm:p-6 max-w-sm w-full text-left border border-slate-200 text-slate-800" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center">
-                  <Download className="w-4.5 h-4.5 text-orange-500" />
-                </div>
-                <h3 className="text-slate-900 font-black text-sm sm:text-base">Install KDS App</h3>
-              </div>
-              <button onClick={() => setShowInstallGuide(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer text-lg">✕</button>
-            </div>
-            <p className="text-slate-500 text-xs mb-4">Mobile ya tablet screen par full-screen install karein:</p>
-            <div className="space-y-3">
-              <div className="flex gap-3 items-start">
-                <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">1</span>
-                <p className="text-slate-600 text-xs"><strong>Chrome / Edge:</strong> Browser menu (⋮) → "Add to Home Screen" ya "Install app"</p>
-              </div>
-              <div className="flex gap-3 items-start">
-                <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">2</span>
-                <p className="text-slate-600 text-xs"><strong>iPhone (Safari):</strong> Share icon ⎋ → "Add to Home Screen"</p>
-              </div>
-            </div>
-
-            <details className="mt-4 pt-3 border-t border-slate-100 text-[10px]">
-              <summary className="text-slate-500 font-bold cursor-pointer hover:text-slate-800 select-none">⚙️ PWA Diagnostics</summary>
-              <div className="mt-2 space-y-1.5 bg-slate-50 p-2.5 rounded-xl font-mono text-[9px] text-slate-600 border border-slate-200/60 break-all">
-                <div><strong>SW:</strong> {pwaDiagnostics.swRegistered}</div>
-                <div><strong>Worker:</strong> {pwaDiagnostics.activeWorker}</div>
-                <div><strong>Manifest:</strong> {pwaDiagnostics.manifestUrl}</div>
-              </div>
-            </details>
           </div>
         </div>
       )}

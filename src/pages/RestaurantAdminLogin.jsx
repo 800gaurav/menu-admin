@@ -10,6 +10,20 @@ export default function RestaurantAdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
+  // If incoming link carries impersonation token from SuperAdmin, capture and redirect
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenParam = params.get('token');
+    if (tokenParam) {
+      localStorage.setItem('restaurant_token', tokenParam);
+      const idParam = params.get('restaurant_id');
+      const slugParam = params.get('restaurant_slug');
+      if (idParam) localStorage.setItem('restaurant_id', idParam);
+      if (slugParam) localStorage.setItem('restaurant_slug', slugParam);
+      navigate('/admin', { replace: true });
+    }
+  }, [navigate]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
