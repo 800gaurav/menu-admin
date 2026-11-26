@@ -410,11 +410,11 @@ export default function KitchenPanel() {
         {/* Left: Branding & Kitchen Title */}
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-            {restaurant?.brandingSettings?.kitchenAppLogo || restaurant?.logo ? (
+            {restaurant?.brandingSettings?.kitchenAppLogo ? (
               <img 
-                src={(restaurant.brandingSettings?.kitchenAppLogo || restaurant.logo).startsWith('http') ? (restaurant.brandingSettings?.kitchenAppLogo || restaurant.logo) : `${BACKEND_URL}${restaurant.brandingSettings?.kitchenAppLogo || restaurant.logo}`} 
+                src={restaurant.brandingSettings.kitchenAppLogo.startsWith('http') ? restaurant.brandingSettings.kitchenAppLogo : `${BACKEND_URL}${restaurant.brandingSettings.kitchenAppLogo}`} 
                 alt="Logo" 
-                className="w-full h-full bg-white p-1 object-contain" 
+                className="w-full h-full object-cover" 
               />
             ) : (
               <ChefHat className="w-5 h-5 text-orange-500" />
