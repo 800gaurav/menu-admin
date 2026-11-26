@@ -8,6 +8,7 @@ import {
   SlidersHorizontal, CheckCheck, RefreshCw, AlertTriangle, Layers
 } from 'lucide-react';
 import { requestFirebaseNotificationPermission } from '../firebase';
+import { playOrderNotification } from '../utils/soundAlert';
 
 const COLUMNS = [
   { id: 'New',       label: 'New Orders',     next: 'Preparing', color: 'amber'   },
@@ -106,6 +107,7 @@ export default function KitchenPanel() {
   }, []);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundEnabledRef = useRef(soundEnabled);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
@@ -113,6 +115,10 @@ export default function KitchenPanel() {
   const orderSyncRequestRef = useRef(null);
   const orderSyncQueuedRef = useRef(false);
   const syncKitchenOrdersRef = useRef(null);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   useEffect(() => {
     const token = localStorage.getItem('restaurant_token') || localStorage.getItem('kitchen_token');
@@ -194,27 +200,9 @@ export default function KitchenPanel() {
     };
   }, []);
 
-  const playChime = () => {
-    if (!soundEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
-      gain.gain.setValueAtTime(0.4, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.7);
-    } catch (e) {
-      console.warn('Audio play failed', e);
-    }
+  const playChime = (order = null) => {
+    if (!soundEnabledRef.current) return;
+    playOrderNotification(order, { voice: true, desktop: true });
   };
 
   const connectSocket = (restaurantId) => {
@@ -241,7 +229,7 @@ export default function KitchenPanel() {
       handledOrderIds.add(order._id);
       setTimeout(() => handledOrderIds.delete(order._id), 6000);
       console.log('Kitchen received new order:', order.orderNumber, order.tableName);
-      playChime();
+      playChime(order);
       setOrders(prev => {
         const exists = prev.some(o => o._id === order._id);
         if (exists) return prev.map(o => o._id === order._id ? order : o);

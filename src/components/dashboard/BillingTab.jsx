@@ -4,7 +4,7 @@ import {
   Search, RefreshCw, Printer, Check, X, Eye,
   User, AlertCircle, Banknote, CreditCard, QrCode,
   Pencil, Trash2, UtensilsCrossed, Minus, Plus, Tag,
-  SlidersHorizontal, Maximize2, ChefHat
+  SlidersHorizontal, ChefHat
 } from 'lucide-react';
 
 export default function BillingTab({
@@ -20,6 +20,29 @@ export default function BillingTab({
   const [editedItems, setEditedItems] = useState([]);
   const [discountVal, setDiscountVal] = useState(0);
   const [adjustmentVal, setAdjustmentVal] = useState(0);
+
+  const [internalTables, setInternalTables] = useState(() => Array.isArray(tables) ? tables : []);
+
+  React.useEffect(() => {
+    if (Array.isArray(tables) && tables.length > 0) {
+      setInternalTables(tables);
+    } else {
+      api.tables.getTables()
+        .then(res => { if (Array.isArray(res)) setInternalTables(res); })
+        .catch(() => {});
+    }
+  }, [tables]);
+
+  const allTableOptions = React.useMemo(() => {
+    const namesSet = new Set();
+    if (Array.isArray(internalTables)) {
+      internalTables.forEach(t => { if (t && t.name) namesSet.add(t.name); });
+    }
+    if (Array.isArray(billingOrders)) {
+      billingOrders.forEach(o => { if (o && o.tableName) namesSet.add(o.tableName); });
+    }
+    return Array.from(namesSet).sort();
+  }, [internalTables, billingOrders]);
 
   React.useEffect(() => {
     if (editingOrder) {
@@ -71,10 +94,21 @@ export default function BillingTab({
   return (
     <div className="space-y-4 text-left animate-fadeIn">
 
-      {/* ── Toolbar ── */}
-      <div className="flex flex-wrap gap-2.5 items-center justify-between bg-white border border-slate-200 px-3.5 py-3 rounded-2xl shadow-sm">
-        <div className="flex flex-wrap gap-2 items-center flex-1">
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl w-60">
+      {/* ── Toolbar (Single row on mobile & desktop) ── */}
+      <div className="flex items-center justify-between gap-2 bg-white border border-slate-200 px-3 py-2.5 rounded-2xl shadow-xs">
+        {/* Left: Table filter dropdown & optional search on desktop */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <select
+            className="h-9 px-3 border border-slate-200 rounded-xl bg-white text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] max-w-[180px] sm:max-w-xs shrink-0 cursor-pointer"
+            value={billingTableFilter}
+            onChange={(e) => setBillingTableFilter(e.target.value)}
+          >
+            <option value="">All Tables</option>
+            {allTableOptions.map(tName => <option key={tName} value={tName}>{tName}</option>)}
+          </select>
+
+          {/* Search bar: hidden on mobile, visible on desktop */}
+          <div className="hidden sm:flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl w-60">
             <Search className="w-4 h-4 text-slate-500 shrink-0" />
             <input
               type="text"
@@ -84,39 +118,38 @@ export default function BillingTab({
               onChange={(e) => setOrderSearch(e.target.value)}
             />
           </div>
-          <select
-            className="h-9 px-3 border border-slate-200 rounded-xl bg-white text-slate-800 font-bold text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b]"
-            value={billingTableFilter}
-            onChange={(e) => setBillingTableFilter(e.target.value)}
-          >
-            <option value="">All Tables</option>
-            {tables.map(t => <option key={t._id} value={t.name}>{t.name}</option>)}
-          </select>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right: Badges & Refresh Icon (No text, No fullscreen toggle) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {billRequestedCount > 0 && (
-            <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs font-bold shadow-xs">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              {billRequestedCount} Bill Req
+            <span
+              className="flex items-center gap-1 px-2.5 py-1 bg-amber-50 border border-amber-200 text-amber-800 rounded-full text-xs font-extrabold shadow-2xs"
+              title={`${billRequestedCount} Bill Request(s)`}
+            >
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+              <span>{billRequestedCount}</span>
+              <span className="hidden sm:inline font-semibold">Req</span>
             </span>
           )}
-          <span className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-700 rounded-full text-xs font-bold">
-            {filteredActiveOrders.length} Active
+
+          {/* Active Count Badge: only number on mobile, text on desktop */}
+          <span
+            className="px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 rounded-full text-xs font-extrabold"
+            title={`${filteredActiveOrders.length} Active Orders`}
+          >
+            <span>{filteredActiveOrders.length}</span>
+            <span className="hidden sm:inline font-semibold"> Active</span>
           </span>
+
+          {/* Refresh Button: Icon only (No text) */}
           <button
+            type="button"
             onClick={() => fetchTabData('billing')}
-            className="h-9 px-3 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors bg-white shadow-xs"
+            className="h-9 w-9 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center cursor-pointer transition-colors bg-white shadow-xs shrink-0"
+            title="Refresh Orders"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </button>
-          <button
-            onClick={() => { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }}
-            className="h-9 w-9 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center cursor-pointer transition-colors bg-white shadow-xs"
-            title="Toggle Fullscreen"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -139,7 +172,7 @@ export default function BillingTab({
                 </div>
                 <div className="flex items-center justify-between gap-3 px-4 py-4">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-800">{ord.customerName || ord.customerId?.name || 'Guest'}</p>
+                    <p className="truncate text-sm font-bold text-slate-800">{ord.customerName || ord.customerId?.name || 'Guest User'}</p>
                     <p className="mt-1 text-xs font-semibold text-slate-500">{itemCount} item{itemCount === 1 ? '' : 's'}</p>
                   </div>
                   <p className="shrink-0 text-xl font-black tracking-tight text-slate-950">{'\u20B9'}{Number(ord.totalAmount || 0).toLocaleString('en-IN')}</p>
@@ -168,8 +201,8 @@ export default function BillingTab({
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Bill details</p>
                   <h2 className="mt-1 truncate text-lg font-extrabold text-slate-900">{viewingOrder.tableName}</h2>
-                  <p className="mt-0.5 text-xs font-medium text-slate-500">Customer: {viewingOrder.customerName || viewingOrder.customerId?.name || 'Guest'}</p>
-                  {viewingOrder.customerName !== 'Multiple guests' && viewingOrder.customerId?.mobile && <p className="mt-0.5 text-xs text-slate-500">Phone: {viewingOrder.customerId.mobile}</p>}
+                  <p className="mt-0.5 text-xs font-medium text-slate-500">Customer: {viewingOrder.customerName || viewingOrder.customerId?.name || 'Guest User'}</p>
+                  {viewingOrder.customerName !== 'Multiple guests' && (viewingOrder.customerMobile || viewingOrder.customerId?.mobile) && <p className="mt-0.5 text-xs text-slate-500">Phone: {viewingOrder.customerMobile || viewingOrder.customerId?.mobile}</p>}
                 </div>
                 <button onClick={() => setViewingOrder(null)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50" aria-label="Close bill details"><X className="h-4 w-4" /></button>
               </div>

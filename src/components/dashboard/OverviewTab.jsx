@@ -33,7 +33,7 @@ ChartJS.register(
   Filler
 );
 
-export default function OverviewTab({ stats = {}, restaurant = {}, onNavigate }) {
+export default function OverviewTab({ stats = {}, restaurant = {}, onNavigate, onOpenTakeOrder }) {
   const [chartMetric, setChartMetric] = useState('revenue'); // 'revenue' | 'orders'
   const [timeFilter, setTimeFilter] = useState('7days'); // '7days' | '30days'
 

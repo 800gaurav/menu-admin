@@ -33,7 +33,7 @@ export default function BillPrint({ order, onClose, restaurant }) {
             {/* Receipt heading and table details */}
             <div className="text-center border-b border-dashed border-slate-300 pb-4">
               <h1 className="text-lg font-black text-slate-900">{restaurant?.name || order.restaurantName || 'Restaurant'}</h1>
-              <p className="mt-2 text-[10px] text-slate-500">Customer: <span className="font-bold text-slate-800">{order.customerName || order.customerId?.name || 'Guest Diner'}</span></p>
+              <p className="mt-2 text-[10px] text-slate-500">Customer: <span className="font-bold text-slate-800">{order.customerName || order.customerId?.name || 'Guest User'}</span></p>
               <p className="mt-0.5 text-[10px] text-slate-500">Table: <span className="font-bold text-slate-800">{order.tableName}</span></p>
             </div>
 

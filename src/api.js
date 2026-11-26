@@ -402,6 +402,10 @@ export const api = {
   // Counter / Billing Endpoints
   counter: {
     getOrders: () => apiFetch('/counter/orders'),
+    createOrder: (orderData) => apiFetch('/counter/orders', {
+      method: 'POST',
+      body: JSON.stringify(orderData)
+    }),
     updateGroupedOrder: (data) => apiFetch('/counter/orders/grouped', {
       method: 'PUT',
       body: JSON.stringify(data)
@@ -415,11 +419,19 @@ export const api = {
   notifications: {
     registerToken: (token, role = 'restaurant') => apiFetch('/notifications/register-token', {
       method: 'POST',
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ token, role })
     }, role),
     deregisterToken: (token) => apiFetch('/notifications/deregister-token', {
       method: 'POST',
       body: JSON.stringify({ token })
+    }),
+    deregisterRole: (token) => apiFetch('/notifications/deregister-role', {
+      method: 'POST',
+      body: JSON.stringify({ token })
+    }),
+    setPreference: (token, enabled) => apiFetch('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ token, enabled })
     })
   }
 };

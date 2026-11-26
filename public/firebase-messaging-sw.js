@@ -2,8 +2,17 @@
 // handler and may otherwise take over notification clicks.
 self.addEventListener('notificationclick', (event) => {
   const data = event.notification.data || {};
+  const slug = data.restaurantSlug ? encodeURIComponent(data.restaurantSlug) : '';
+  const roleTarget = {
+    counter: slug ? `/admin/counter/${slug}` : '/admin/',
+    kitchen: slug ? `/admin/kitchen/${slug}` : '/admin/',
+    waiter: slug ? `/waiter/${slug}` : '/admin/'
+  }[data.targetRole];
+  const fallbackTarget = data.type === 'bill_request'
+    ? '/admin/'
+    : (slug ? `/admin/kitchen/${slug}` : '/admin/');
   const targetUrl = new URL(
-    data.clickPath || (data.restaurantSlug ? `/admin/kitchen/${encodeURIComponent(data.restaurantSlug)}` : '/admin/'),
+    roleTarget || data.clickPath || fallbackTarget,
     self.location.origin
   );
   if (data.orderId) targetUrl.searchParams.set('orderId', data.orderId);

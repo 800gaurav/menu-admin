@@ -29,6 +29,7 @@ import {
   Volume2,
   VolumeX,
   Bell,
+  BellOff,
   Lock
 } from 'lucide-react';
 
@@ -44,9 +45,11 @@ import CrmTab from '../components/dashboard/CrmTab';
 import WaitersTab from '../components/dashboard/WaitersTab';
 import SettingsTab from '../components/dashboard/SettingsTab';
 import { requestFirebaseNotificationPermission } from '../firebase';
+import { playOrderNotification } from '../utils/soundAlert';
 
 // Modal Component Imports
 import OrderInvoiceModal from '../components/dashboard/OrderInvoiceModal';
+import CounterOrderModal from '../components/dashboard/CounterOrderModal';
 import CategoryModal from '../components/dashboard/CategoryModal';
 import MenuItemModal from '../components/dashboard/MenuItemModal';
 import TableModal from '../components/dashboard/TableModal';
@@ -66,7 +69,7 @@ const mergeOrderData = (existingOrder, incomingOrder) => {
     }
   }
 
-  const customerName = incomingOrder.customerName || existingOrder.customerName || (typeof resolvedCustomer === 'object' ? resolvedCustomer?.name : '');
+  const customerName = incomingOrder.customerName || existingOrder.customerName || (typeof resolvedCustomer === 'object' ? resolvedCustomer?.name : '') || 'Guest User';
   const customerMobile = incomingOrder.customerMobile || existingOrder.customerMobile || (typeof resolvedCustomer === 'object' ? resolvedCustomer?.mobile : '');
 
   let resolvedWaiter = incomingOrder.waiterId;
@@ -190,12 +193,16 @@ export default function RestaurantAdminDashboard() {
 
   const [bulkPriceData, setBulkPriceData] = useState({ value: '', type: 'percentage' });
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [isTakeOrderModalOpen, setIsTakeOrderModalOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem('admin_sound_enabled') !== 'false';
   });
+  const soundEnabledRef = useRef(soundEnabled);
+  const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(() => localStorage.getItem('admin_order_push_enabled') !== 'false');
+  const orderNotificationsEnabledRef = useRef(orderNotificationsEnabled);
   const [newOrderToast, setNewOrderToast] = useState(null);
   const newOrderToastTimeout = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -206,6 +213,10 @@ export default function RestaurantAdminDashboard() {
   const handledNewOrderIdsRef = useRef(new Set());
   const audioContextRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
 
   useEffect(() => {
     const unlockAudio = () => {
@@ -230,12 +241,20 @@ export default function RestaurantAdminDashboard() {
 
   useEffect(() => {
     fetchInitialData();
-    requestFirebaseNotificationPermission('restaurantadmin');
+    if (orderNotificationsEnabledRef.current) {
+      requestFirebaseNotificationPermission('restaurantadmin').then(token => {
+        if (token) api.notifications.setPreference(token, orderNotificationsEnabledRef.current).catch(error => console.error('Could not sync admin push preference:', error));
+      });
+    }
     
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    orderNotificationsEnabledRef.current = orderNotificationsEnabled;
+  }, [orderNotificationsEnabled]);
 
   useEffect(() => {
     fetchTabData(activeTab);
@@ -310,6 +329,7 @@ export default function RestaurantAdminDashboard() {
         
         loadedTabs.current.add('overview');
         loadedTabs.current.add('settings');
+        api.tables.getTables().then(tList => { if (Array.isArray(tList)) setTables(tList); }).catch(() => {});
         connectSocket(profile._id);
       }
     } catch (err) {
@@ -346,6 +366,9 @@ export default function RestaurantAdminDashboard() {
         setHistoryOrders(historyList);
         setBillingSummary(summaryStats);
         setTables(tablesList);
+      } else if (tab === 'billing-history') {
+        const tablesList = await api.tables.getTables().catch(() => []);
+        if (Array.isArray(tablesList)) setTables(tablesList);
       } else if (tab === 'menu') {
         const [cats, items] = await Promise.all([api.menu.getCategories(), api.menu.getItems()]);
         setCategories(cats);
@@ -378,34 +401,9 @@ export default function RestaurantAdminDashboard() {
     }
   };
 
-  const playNotificationSound = (force = false) => {
-    if (!soundEnabled && !force) return;
-    try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      const audioCtx = audioContextRef.current || new AudioContextClass();
-      audioContextRef.current = audioCtx;
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.type = 'triangle';
-      oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15); // A5
-
-      gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.7);
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.7);
-    } catch (e) {
-      console.warn('Audio notification error:', e);
-    }
+  const playNotificationSound = (force = false, order = null) => {
+    if (!soundEnabledRef.current && !force) return;
+    playOrderNotification(order, { voice: true, desktop: true });
   };
 
   const toggleSound = () => {
@@ -413,10 +411,47 @@ export default function RestaurantAdminDashboard() {
       const next = !prev;
       localStorage.setItem('admin_sound_enabled', String(next));
       if (next) {
-        playNotificationSound(true);
+        // Preview loud chime when toggled on
+        playOrderNotification(null, { voice: false, desktop: false });
       }
       return next;
     });
+  };
+
+  const toggleOrderNotifications = async () => {
+    const nextEnabled = !orderNotificationsEnabled;
+    let token = localStorage.getItem('menuos_fcm_token_restaurantadmin');
+
+    if (nextEnabled) {
+      if (typeof Notification === 'undefined' || Notification.permission === 'denied') {
+        window.alert('Notifications are blocked in browser settings. Allow notifications for this site, then try again.');
+        return;
+      }
+      token = await requestFirebaseNotificationPermission('restaurantadmin');
+      if (!token) {
+        window.alert('Admin push notifications could not be enabled. Check browser notification permission and try again.');
+        return;
+      }
+    }
+
+    setOrderNotificationsEnabled(nextEnabled);
+    orderNotificationsEnabledRef.current = nextEnabled;
+    localStorage.setItem('admin_order_push_enabled', String(nextEnabled));
+    if (!nextEnabled) {
+      setNewOrderToast(null);
+      if (newOrderToastTimeout.current) clearTimeout(newOrderToastTimeout.current);
+    }
+    if (token) {
+      try {
+        await api.notifications.setPreference(token, nextEnabled);
+      } catch (error) {
+        if (!nextEnabled && error.status === 404) return;
+        setOrderNotificationsEnabled(!nextEnabled);
+        orderNotificationsEnabledRef.current = !nextEnabled;
+        localStorage.setItem('admin_order_push_enabled', String(!nextEnabled));
+        window.alert(error.message || 'Could not save notification preference. Please try again.');
+      }
+    }
   };
 
   const refreshBillingSummary = async () => {
@@ -470,14 +505,12 @@ export default function RestaurantAdminDashboard() {
         });
       }
 
-      // Show floating notification banner
-      setNewOrderToast(newOrder);
-      if (newOrderToastTimeout.current) clearTimeout(newOrderToastTimeout.current);
-      newOrderToastTimeout.current = setTimeout(() => {
-        setNewOrderToast(null);
-      }, 8000);
-
-      playNotificationSound();
+      if (orderNotificationsEnabledRef.current) {
+        setNewOrderToast(newOrder);
+        if (newOrderToastTimeout.current) clearTimeout(newOrderToastTimeout.current);
+        newOrderToastTimeout.current = setTimeout(() => setNewOrderToast(null), 8000);
+        playNotificationSound(false, newOrder);
+      }
       refreshStats();
       refreshBillingSummary();
     });
@@ -534,6 +567,7 @@ export default function RestaurantAdminDashboard() {
     socketRef.current.on('waiterCallAttended', refreshStats);
     socketRef.current.on('counterBillUpdated', () => {
       api.counter.getOrders().then(setBillingOrders).catch((err) => console.error(err));
+      refreshBillingSummary();
     });
   };
 
@@ -1128,6 +1162,46 @@ export default function RestaurantAdminDashboard() {
                 )}
               </li>
               <li>
+                {restaurant?.features?.counterPanel === false ? (
+                  <div 
+                    className={`w-full flex items-center rounded-xl text-slate-500 bg-slate-900/40 border border-slate-800/80 cursor-not-allowed ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title="Counter POS is not enabled in your current plan. Contact Super Admin to upgrade."
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Receipt className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] font-medium truncate line-through">Counter POS</span>}
+                    </div>
+                    {!isSidebarCollapsed && <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                  </div>
+                ) : restaurant?.slug ? (
+                  <a 
+                    href={`${ADMIN_URL}/admin/counter/${restaurant.slug}`} 
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setSidebarOpen(false)}
+                    className={`w-full flex items-center transition-all duration-150 rounded-xl group text-slate-300 hover:bg-slate-800/70 hover:text-white border border-transparent hover:border-slate-700/60 ${
+                      isSidebarCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2.5'
+                    }`}
+                    title={isSidebarCollapsed ? 'Counter POS' : ''}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Receipt className="w-4.5 h-4.5 text-emerald-400 group-hover:scale-105 transition-transform shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-300 group-hover:text-white font-medium truncate">Counter POS</span>}
+                    </div>
+                    {!isSidebarCollapsed && <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-300 shrink-0" />}
+                  </a>
+                ) : (
+                  <div className={`w-full flex items-center text-slate-600 select-none ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5'}`}>
+                    <div className="flex items-center gap-3">
+                      <Receipt className="w-4.5 h-4.5 text-slate-600 shrink-0" />
+                      {!isSidebarCollapsed && <span className="text-[13.5px] text-slate-600">Counter POS</span>}
+                    </div>
+                  </div>
+                )}
+              </li>
+              <li>
                 {restaurant?.slug ? (
                   <a 
                     href={`${USER_URL}/menu/${restaurant.slug}`} 
@@ -1158,17 +1232,33 @@ export default function RestaurantAdminDashboard() {
           </div>
         </nav>
 
-        {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
+        {typeof Notification !== 'undefined' && (
           <div className="px-3 pb-2.5 bg-slate-950/20">
             <button
               type="button"
-              onClick={() => requestFirebaseNotificationPermission('restaurantadmin')}
+              onClick={toggleOrderNotifications}
+              className={`mb-2 w-full flex items-center gap-2.5 rounded-xl border cursor-pointer ${orderNotificationsEnabled ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20' : 'border-slate-600 bg-slate-800/80 text-slate-300 hover:bg-slate-700'} ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2'}`}
+              title={orderNotificationsEnabled ? 'Turn off admin live-order alerts and push notifications' : 'Turn on admin live-order alerts and push notifications'}
+            >
+              {orderNotificationsEnabled ? <Bell className="w-4 h-4 shrink-0" /> : <BellOff className="w-4 h-4 shrink-0" />}
+              {!isSidebarCollapsed && <span className="text-[11.5px] font-bold">Order Alerts: {orderNotificationsEnabled ? 'On' : 'Off'}</span>}
+            </button>
+            {Notification.permission !== 'granted' && (
+            <button
+              type="button"
+              onClick={async () => {
+                const token = await requestFirebaseNotificationPermission('restaurantadmin');
+                if (token) {
+                  await api.notifications.setPreference(token, orderNotificationsEnabled).catch(error => window.alert(error.message || 'Could not save notification preference'));
+                }
+              }}
               className={`w-full flex items-center gap-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 cursor-pointer ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2'}`}
               title="Enable new order notifications"
             >
               <Bell className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span className="text-[11.5px] font-bold">Enable Notifications</span>}
             </button>
+            )}
           </div>
         )}
 
@@ -1234,7 +1324,12 @@ export default function RestaurantAdminDashboard() {
           <>
             {/* Conditional Tab Rendering */}
             {activeTab === 'overview' && (
-              <OverviewTab stats={stats} restaurant={restaurant} onNavigate={setActiveTab} />
+              <OverviewTab
+                stats={stats}
+                restaurant={restaurant}
+                onNavigate={setActiveTab}
+                onOpenTakeOrder={() => setIsTakeOrderModalOpen(true)}
+              />
             )}
 
             {activeTab === 'orders' && (
@@ -1497,6 +1592,17 @@ export default function RestaurantAdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Counter POS Order Modal */}
+      <CounterOrderModal
+        isOpen={isTakeOrderModalOpen}
+        onClose={() => setIsTakeOrderModalOpen(false)}
+        tables={tables}
+        onOrderPlaced={() => {
+          fetchInitialData();
+          fetchTabData(activeTab);
+        }}
+      />
     </div>
   );
 }

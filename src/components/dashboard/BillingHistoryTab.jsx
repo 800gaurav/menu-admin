@@ -5,14 +5,14 @@ import {
   X, 
   Printer, 
   Receipt, 
-  Download, 
   RefreshCw, 
   ChevronLeft, 
   ChevronRight, 
   ChevronsLeft, 
   ChevronsRight,
   Filter,
-  TrendingUp
+  TrendingUp,
+  QrCode
 } from 'lucide-react';
 import { api } from '../../api';
 
@@ -70,10 +70,40 @@ export default function BillingHistoryTab({
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [tableFilter, setTableFilter] = useState('');
-  const [statusTab, setStatusTab] = useState('all'); // 'all' | 'completed' | 'cancelled'
   const [datePreset, setDatePreset] = useState('all'); // 'all' | 'today' | 'yesterday' | '7days' | 'month' | 'custom'
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Self-healing tables list: fetch automatically if parent hasn't loaded tables
+  const [internalTables, setInternalTables] = useState(() => Array.isArray(tables) ? tables : []);
+
+  useEffect(() => {
+    if (Array.isArray(tables) && tables.length > 0) {
+      setInternalTables(tables);
+    } else {
+      api.tables.getTables()
+        .then(res => {
+          if (Array.isArray(res)) setInternalTables(res);
+        })
+        .catch(err => console.error('Failed to load tables in BillingHistoryTab:', err));
+    }
+  }, [tables]);
+
+  // Combined unique table names from DB tables + any orders (ensures dropdown is never empty)
+  const allTableOptions = React.useMemo(() => {
+    const namesSet = new Set();
+    if (Array.isArray(internalTables)) {
+      internalTables.forEach(t => {
+        if (t && t.name) namesSet.add(t.name);
+      });
+    }
+    if (Array.isArray(orders)) {
+      orders.forEach(o => {
+        if (o && o.tableName) namesSet.add(o.tableName);
+      });
+    }
+    return Array.from(namesSet).sort();
+  }, [internalTables, orders]);
 
   // Debounce search input (350ms) to avoid unnecessary backend queries while typing
   useEffect(() => {
@@ -111,28 +141,20 @@ export default function BillingHistoryTab({
     return { startDate: '', endDate: '' };
   }, [datePreset, startDate, endDate]);
 
-  // Status mapping to backend query (Only Completed / Paid or Cancelled)
-  const getStatusParam = useCallback((tab) => {
-    if (tab === 'completed') return 'Completed';
-    if (tab === 'cancelled') return 'Cancelled';
-    return '';
-  }, []);
-
   // Fetch orders directly from backend with pagination and filters
   const fetchOrders = useCallback(async (pageToLoad = 1) => {
     setLoading(true);
     try {
       const { startDate: sDate, endDate: eDate } = getDateRangeParams();
-      const statusParam = getStatusParam(statusTab);
 
       const params = {
         pagination: 'true',
         history: 'true',
+        status: 'Completed',
         page: pageToLoad,
         limit: pageSize
       };
 
-      if (statusParam) params.status = statusParam;
       if (tableFilter) params.table = tableFilter;
       if (debouncedSearch) params.search = debouncedSearch;
       if (sDate) params.startDate = sDate;
@@ -141,19 +163,21 @@ export default function BillingHistoryTab({
       const res = await api.orders.getOrders(params);
 
       if (res && res.orders) {
-        // Ensure the most recently settled table is at the top
-        const sorted = [...res.orders].sort((a, b) => {
+        // Exclude any cancelled orders completely from history & sales
+        const filtered = res.orders.filter(o => o.status !== 'Cancelled');
+        const sorted = [...filtered].sort((a, b) => {
           const tA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
           const tB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
           return tB - tA;
         });
         setOrders(sorted);
-        setTotalCount(res.totalCount || 0);
+        setTotalCount(res.totalCount || sorted.length);
         setTotalPages(res.totalPages || 1);
         setCurrentPage(res.currentPage || pageToLoad);
-        setTotalRevenue(res.totalRevenue !== undefined ? res.totalRevenue : 0);
+        setTotalRevenue(res.totalRevenue !== undefined ? res.totalRevenue : sorted.reduce((acc, o) => acc + (o.totalAmount || 0), 0));
       } else if (Array.isArray(res)) {
-        const sorted = [...res].sort((a, b) => {
+        const filtered = res.filter(o => o.status !== 'Cancelled');
+        const sorted = [...filtered].sort((a, b) => {
           const tA = new Date(a.completedAt || a.updatedAt || a.createdAt).getTime();
           const tB = new Date(b.completedAt || b.updatedAt || b.createdAt).getTime();
           return tB - tA;
@@ -162,7 +186,7 @@ export default function BillingHistoryTab({
         setTotalCount(sorted.length);
         setTotalPages(1);
         setCurrentPage(1);
-        const sum = sorted.filter(o => o.status !== 'Cancelled').reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+        const sum = sorted.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
         setTotalRevenue(sum);
       } else {
         setOrders([]);
@@ -180,7 +204,7 @@ export default function BillingHistoryTab({
     } finally {
       setLoading(false);
     }
-  }, [pageSize, statusTab, tableFilter, debouncedSearch, getDateRangeParams, getStatusParam]);
+  }, [pageSize, tableFilter, debouncedSearch, getDateRangeParams]);
 
   // Whenever filters change, reset to Page 1 and fetch
   const isInitialMount = useRef(true);
@@ -192,7 +216,7 @@ export default function BillingHistoryTab({
     }
     setCurrentPage(1);
     fetchOrders(1);
-  }, [debouncedSearch, tableFilter, statusTab, datePreset, startDate, endDate, pageSize]);
+  }, [debouncedSearch, tableFilter, datePreset, startDate, endDate, pageSize]);
 
   // Handle explicit page changes
   const handlePageChange = (newPage) => {
@@ -201,26 +225,11 @@ export default function BillingHistoryTab({
     fetchOrders(newPage);
   };
 
-  // CSV Export URL with active filters
-  const getExportUrl = () => {
-    const { startDate: sDate, endDate: eDate } = getDateRangeParams();
-    const statusParam = getStatusParam(statusTab);
-    return api.orders.exportCsvUrl({
-      history: 'true',
-      status: statusParam,
-      table: tableFilter,
-      search: debouncedSearch,
-      startDate: sDate,
-      endDate: eDate
-    });
-  };
-
   // Reset all filters
   const handleResetFilters = () => {
     setSearch('');
     setDebouncedSearch('');
     setTableFilter('');
-    setStatusTab('all');
     setDatePreset('all');
     setStartDate('');
     setEndDate('');
@@ -274,18 +283,6 @@ export default function BillingHistoryTab({
             <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
             <span className="hidden md:inline">Refresh</span>
           </button>
-          
-          {/* Export CSV Button */}
-          <a
-            href={getExportUrl()}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="h-8 px-2.5 sm:h-9 sm:px-3.5 flex items-center justify-center gap-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] sm:text-xs font-bold transition-all shadow-2xs cursor-pointer"
-            title="Export filtered records to CSV"
-          >
-            <Download className="w-3.5 h-3.5 text-slate-300" />
-            <span>Export CSV</span>
-          </a>
         </div>
       </header>
 
@@ -315,16 +312,21 @@ export default function BillingHistoryTab({
           
           {/* Table / Room Filter (1 col on mobile, 3 cols on desktop) */}
           <div className="col-span-1 sm:col-span-3">
-            <select
-              className="h-8 sm:h-9 w-full px-2.5 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[11px] sm:text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors"
-              value={tableFilter}
-              onChange={(e) => setTableFilter(e.target.value)}
-            >
-              <option value="">All Tables</option>
-              {tables.map(tOption => (
-                <option key={tOption._id} value={tOption.name}>{tOption.name}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-2.5 flex items-center pointer-events-none text-slate-400">
+                <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+              </div>
+              <select
+                className="h-8 sm:h-9 w-full pl-7 pr-2.5 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 font-bold text-[11px] sm:text-xs outline-none focus:ring-2 focus:ring-[#003b1b]/20 focus:border-[#003b1b] cursor-pointer transition-colors truncate"
+                value={tableFilter}
+                onChange={(e) => setTableFilter(e.target.value)}
+              >
+                <option value="">All Tables</option>
+                {allTableOptions.map(tName => (
+                  <option key={tName} value={tName}>{tName}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Date Filter Preset Dropdown (1 col on mobile, 3/4 cols on desktop) */}
@@ -403,38 +405,6 @@ export default function BillingHistoryTab({
 
       {/* Main Historical Table Container */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        {/* Table Subheader with Status Pills & Count */}
-        <div className="px-3 sm:px-5 py-2 sm:py-2.5 border-b border-slate-100 bg-slate-50/50 flex flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <Receipt className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-            <span className="font-extrabold text-xs sm:text-sm text-slate-900 truncate">Invoices</span>
-            <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.2 rounded-full shrink-0">
-              {totalCount}
-            </span>
-          </div>
-
-          {/* Status Subtabs (Only Settled / Paid or Cancelled) */}
-          <div className="flex gap-0.5 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold shrink-0">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'completed', label: 'Settled' },
-              { id: 'cancelled', label: 'Cancelled' }
-            ].map(subTab => (
-              <button
-                key={subTab.id}
-                onClick={() => setStatusTab(subTab.id)}
-                className={`px-2 sm:px-2.5 py-1 rounded-md cursor-pointer transition-colors font-bold ${
-                  statusTab === subTab.id
-                    ? 'bg-[#003b1b] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                {subTab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Table Content */}
         {loading ? (
           <div className="py-12 px-4">
@@ -455,7 +425,7 @@ export default function BillingHistoryTab({
               <Filter className="w-6 h-6" />
             </div>
             <p className="text-slate-500 font-bold text-xs sm:text-sm">No matching history orders found for the selected filters.</p>
-            {(datePreset !== 'all' || tableFilter || debouncedSearch || statusTab !== 'all') && (
+            {(datePreset !== 'all' || tableFilter || debouncedSearch) && (
               <button
                 onClick={handleResetFilters}
                 className="text-xs text-emerald-700 font-bold hover:underline cursor-pointer inline-flex items-center gap-1"
@@ -472,9 +442,6 @@ export default function BillingHistoryTab({
                   <th className="p-3.5 pl-5">Table / Room</th>
                   <th className="p-3.5">Settled Date & Time (IST)</th>
                   <th className="p-3.5">Customer Details</th>
-                  <th className="p-3.5">Items Summary</th>
-                  <th className="p-3.5">Status</th>
-                  <th className="p-3.5">Payment</th>
                   <th className="p-3.5">Total Amount</th>
                   <th className="p-3.5 pr-5 text-right">Receipt</th>
                 </tr>
@@ -482,14 +449,8 @@ export default function BillingHistoryTab({
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {orders.map((ord) => (
                   <tr key={ord._id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="p-3.5 pl-5 font-bold text-slate-900">
-                      <span>{ord.tableName}</span>
-                      <span className="text-[10px] text-slate-500 block font-bold font-mono mt-0.5">{ord.orderNumber}</span>
-                      {ord.servedBy && (
-                        <span className="text-[9.5px] text-indigo-700 font-bold block mt-0.5 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/60 w-max">
-                          Served by: {ord.servedBy}
-                        </span>
-                      )}
+                    <td className="p-3.5 pl-5 font-bold text-slate-900 whitespace-nowrap">
+                      {ord.tableName}
                     </td>
                     <td className="p-3.5 text-slate-700 font-semibold text-[11px] whitespace-nowrap">
                       <span className="block text-slate-900 font-bold">
@@ -502,35 +463,16 @@ export default function BillingHistoryTab({
                       )}
                     </td>
                     <td className="p-3.5">
-                      {ord.customerId ? (
+                      {(ord.customerName || ord.customerId?.name) ? (
                         <div>
-                          <span className="text-slate-900 font-bold block">{ord.customerId?.name || 'N/A'}</span>
-                          <span className="text-[10.5px] text-slate-500 font-medium block mt-0.5">{ord.customerId?.mobile || ''}</span>
+                          <span className="text-slate-900 font-bold block">{ord.customerName || ord.customerId?.name || 'Guest User'}</span>
+                          {(ord.customerMobile || ord.customerId?.mobile) ? (
+                            <span className="text-[10.5px] text-slate-500 font-medium block mt-0.5">{ord.customerMobile || ord.customerId?.mobile}</span>
+                          ) : null}
                         </div>
                       ) : (
-                        <span className="text-slate-500 font-bold">Guest Diner</span>
+                        <span className="text-slate-500 font-bold">Guest User</span>
                       )}
-                    </td>
-                    <td className="p-3.5 max-w-xs truncate text-[11px] text-slate-700 font-medium">
-                      {ord.items && ord.items.map(i => `${i.name}${i.variantName ? ` (${i.variantName})` : ''} (x${i.quantity})`).join(', ')}
-                    </td>
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        ord.status === 'Completed' || ord.paymentStatus === 'Paid'
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold'
-                          : 'bg-rose-50 text-rose-800 border border-rose-200'
-                      }`}>
-                        {ord.status === 'Completed' ? 'Settled' : ord.status}
-                      </span>
-                    </td>
-                    <td className="p-3.5 whitespace-nowrap">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                        ord.paymentStatus === 'Paid'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-rose-50 text-rose-800 border-rose-200'
-                      }`}>
-                        {ord.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid'}
-                      </span>
                     </td>
                     <td className="p-3.5 font-black text-slate-900 text-sm whitespace-nowrap">
                       ₹{ord.totalAmount}

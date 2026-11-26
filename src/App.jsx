@@ -9,6 +9,7 @@ import QRGenerator from './pages/QRGenerator';
 import CounterPanel from './pages/CounterPanel';
 import KitchenPanel from './pages/KitchenPanel';
 import KitchenLogin from './pages/KitchenLogin';
+import PinLogin from './pages/PinLogin';
 import BillPrint from './pages/BillPrint';
 
 let restaurantAuthCheck = null;
@@ -78,15 +79,37 @@ const RequireCounterAuth = ({ children }) => {
   const token = localStorage.getItem('restaurant_token');
   const tokenSlug = localStorage.getItem('restaurant_slug');
 
-  if (token && tokenSlug === slug) {
+  if (token && (!tokenSlug || tokenSlug === slug)) {
     return children;
   }
 
   // Clear if mismatched
-  localStorage.removeItem('restaurant_token');
-  localStorage.removeItem('restaurant_id');
-  localStorage.removeItem('restaurant_slug');
+  if (tokenSlug && tokenSlug !== slug) {
+    localStorage.removeItem('restaurant_token');
+    localStorage.removeItem('restaurant_id');
+    localStorage.removeItem('restaurant_slug');
+  }
+  return <Navigate to={`/admin/counter/${slug}/login`} replace />;
+};
+
+const CounterRedirect = () => {
+  const slug = localStorage.getItem('restaurant_slug');
+  if (slug) {
+    return <Navigate to={`/admin/counter/${slug}`} replace />;
+  }
   return <Navigate to="/admin/login" replace />;
+};
+
+const ScopedCounterRouteRedirect = ({ login = false }) => {
+  const { slug } = useParams();
+  if (!slug) {
+    const savedSlug = localStorage.getItem('restaurant_slug');
+    if (savedSlug) {
+      return <Navigate to={`/admin/counter/${savedSlug}${login ? '/login' : ''}`} replace />;
+    }
+    return <Navigate to="/admin/login" replace />;
+  }
+  return <Navigate to={`/admin/counter/${slug}${login ? '/login' : ''}`} replace />;
 };
 
 const RequireKitchenAuth = ({ children }) => {
@@ -127,8 +150,18 @@ export default function App() {
         <Route path="/admin/" element={<RequireRestaurantAuth><RestaurantAdminDashboard /></RequireRestaurantAuth>} />
         <Route path="/admin/qr-generator" element={<RequireRestaurantAuth><QRGenerator /></RequireRestaurantAuth>} />
 
-        {/* Counter Billing Panel */}
-        <Route path="/counter/:slug" element={<RequireCounterAuth><CounterPanel /></RequireCounterAuth>} />
+        {/* Counter Billing Panel - In PWA Scope /admin/ */}
+        <Route path="/admin/counter/:slug" element={<RequireCounterAuth><CounterPanel /></RequireCounterAuth>} />
+        <Route path="/admin/counter/:slug/:view" element={<RequireCounterAuth><CounterPanel /></RequireCounterAuth>} />
+        <Route path="/admin/counter/:slug/login" element={<PinLogin role="counter" />} />
+        <Route path="/admin/counter" element={<CounterRedirect />} />
+        <Route path="/admin/counter/" element={<CounterRedirect />} />
+
+        {/* Keep legacy /counter URLs working while moving Counter into the PWA scope */}
+        <Route path="/counter/:slug" element={<ScopedCounterRouteRedirect />} />
+        <Route path="/counter/:slug/login" element={<ScopedCounterRouteRedirect login />} />
+        <Route path="/counter" element={<ScopedCounterRouteRedirect />} />
+        <Route path="/counter/" element={<ScopedCounterRouteRedirect />} />
 
         {/* Kitchen Panel View */}
         <Route path="/admin/kitchen/:slug" element={<RequireKitchenAuth><KitchenPanel /></RequireKitchenAuth>} />

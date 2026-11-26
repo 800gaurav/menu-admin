@@ -3,9 +3,34 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const devBaseRedirectPlugin = () => ({
+  name: 'dev-base-redirect',
+  configureServer(server) {
+    server.middlewares.use((req, res, next) => {
+      const rawUrl = req.url || '';
+      const [pathname, search] = rawUrl.split('?');
+      const query = search ? `?${search}` : '';
+
+      if (
+        pathname.startsWith('/counter') ||
+        pathname.startsWith('/kitchen') ||
+        pathname === '/' ||
+        pathname === '/login' ||
+        pathname.startsWith('/login')
+      ) {
+        res.writeHead(302, { Location: `/admin${pathname}${query}` });
+        res.end();
+        return;
+      }
+      next();
+    });
+  }
+});
+
 export default defineConfig({
   base: '/admin/',
   plugins: [
+    devBaseRedirectPlugin(),
     react(),
     tailwindcss(),
     VitePWA({

@@ -54,6 +54,12 @@ export default function PinLogin({ role }) {
       if (role === 'waiter') {
         localStorage.setItem('waiter_token', res.token);
         navigate(`/waiter/${slug}`);
+      } else if (role === 'counter') {
+        setRestaurantToken(res.token);
+        navigate(`/admin/counter/${slug}`);
+      } else if (role === 'kitchen') {
+        setRestaurantToken(res.token);
+        navigate(`/admin/kitchen/${slug}`);
       } else {
         // Kitchen and Counter staff use standard restaurant_token to authorize order reads
         setRestaurantToken(res.token);

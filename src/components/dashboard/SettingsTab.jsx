@@ -2,6 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { Trash2, ImagePlus, ShoppingCart, KeyRound, Palette, Globe, Smartphone, ShieldCheck, LayoutGrid, List } from 'lucide-react';
 import { api, BACKEND_URL } from '../../api';
 
+const getOptimizedImg = (url, width = 280) => {
+  if (!url) return '';
+  const full = url.startsWith('http') ? url : `${BACKEND_URL}${url}`;
+  if (full.includes('images.unsplash.com')) {
+    try {
+      const u = new URL(full);
+      u.searchParams.set('w', width.toString());
+      u.searchParams.set('q', '70');
+      u.searchParams.set('auto', 'format');
+      u.searchParams.set('fit', 'crop');
+      return u.toString();
+    } catch (e) {
+      return full;
+    }
+  }
+  return full;
+};
+
 export default function SettingsTab({
   restaurant,
   setRestaurant,
@@ -102,7 +120,7 @@ export default function SettingsTab({
   };
 
   const handleSaveMenuItemLayout = async () => {
-    const menuItemLayout = restaurant?.brandingSettings?.menuItemLayout || 'grid';
+    const menuItemLayout = restaurant?.brandingSettings?.menuItemLayout || 'list';
     setLayoutSaving(true);
     setLayoutSaveStatus({ type: '', message: '' });
     try {
@@ -240,7 +258,7 @@ export default function SettingsTab({
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
               {(restaurant?.banners || []).map((ban, idx) => (
                 <div key={idx} className="relative h-20 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 group">
-                  <img src={ban.startsWith('http') ? ban : `${BACKEND_URL}${ban}`} alt={`Banner ${idx}`} className="w-full h-full object-cover" />
+                  <img src={getOptimizedImg(ban, 280)} alt={`Banner ${idx}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   <button type="button" onClick={() => setRestaurant({ ...restaurant, banners: restaurant.banners.filter((_, i) => i !== idx) })} className="absolute inset-0 bg-black/50 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -265,10 +283,10 @@ export default function SettingsTab({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
+                { value: 'list', title: 'Single-item list (Default)', description: 'One item per row with photo, details and Add button.', Icon: List },
                 { value: 'grid', title: 'Two-column grid', description: 'Compact cards shown side by side.', Icon: LayoutGrid },
-                { value: 'list', title: 'Single-item list', description: 'One item per row with photo, details and Add button.', Icon: List },
               ].map(({ value, title, description, Icon }) => {
-                const selected = (restaurant?.brandingSettings?.menuItemLayout || 'grid') === value;
+                const selected = (restaurant?.brandingSettings?.menuItemLayout || 'list') === value;
                 return (
                   <button
                     key={value}

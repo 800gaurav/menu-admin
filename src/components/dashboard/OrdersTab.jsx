@@ -88,6 +88,15 @@ export default function OrdersTab({
     }
   };
 
+  const handleRejectOrder = async (orderId) => {
+    try {
+      await api.orders.deleteOrder(orderId);
+      setSelectedViewOrder(null);
+    } catch (err) {
+      alert('Failed to reject order: ' + err.message);
+    }
+  };
+
   const uniqueTables = React.useMemo(() => {
     return [...new Set(orders.map(o => o.tableName))].filter(Boolean).sort();
   }, [orders]);
@@ -138,7 +147,7 @@ export default function OrdersTab({
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn text-xs text-left">
+    <div className="h-full min-h-0 flex flex-col animate-fadeIn text-xs text-left">
       {tabLoading ? (
         <div className="text-center py-20">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#003b1b] mx-auto"></div>
@@ -146,7 +155,7 @@ export default function OrdersTab({
       ) : (
         <>
           {/* Controls & Filter Bar (Clean Table Filter and Sound toggle in one row on mobile) */}
-          <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between bg-white px-3 sm:px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm text-xs mb-3">
+          <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center justify-between bg-white px-3 sm:px-4 py-2 rounded-2xl border border-slate-200 shadow-sm text-xs mb-2 shrink-0">
             {/* Table filter & Mobile Sound toggle */}
             <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
               <div className="flex items-center gap-2 flex-1 sm:flex-initial min-w-0">
@@ -262,9 +271,9 @@ export default function OrdersTab({
           </div>
 
           {viewMode === 'kanban' ? (
-            <div className="space-y-3">
+            <div className="flex-1 min-h-0 flex flex-col">
               {/* ── Mobile Column Switcher (Visible only on mobile screens < 768px, like Kitchen Panel) ── */}
-              <div className="md:hidden bg-white border border-slate-200 rounded-2xl p-2 flex items-center gap-1.5 shadow-sm overflow-x-auto hide-scrollbar">
+              <div className="md:hidden bg-white border border-slate-200 rounded-2xl p-2 flex items-center gap-1.5 shadow-sm overflow-x-auto hide-scrollbar mb-2 shrink-0">
                 {[
                   { id: 'New', label: 'New', count: filtered.filter(o => o.status === 'New').length, color: 'amber' },
                   { id: 'Preparing', label: 'Preparing', count: filtered.filter(o => ['Accepted', 'Preparing'].includes(o.status)).length, color: 'blue' },
@@ -300,7 +309,7 @@ export default function OrdersTab({
               </div>
 
               {/* Orders Kanban Grid View (Desktop: 4 columns | Mobile: active tab column) */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 sm:gap-3 items-start">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 sm:gap-3 items-stretch flex-1 min-h-0">
                 {[
                   {
                     id: 'New',
@@ -333,7 +342,7 @@ export default function OrdersTab({
                       key={col.id} 
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDrop(e, col.id === 'Preparing' ? 'Accepted' : col.id === 'Ready' ? 'Ready' : col.id)}
-                      className={`bg-slate-50/50 border border-slate-200 rounded-2xl flex flex-col min-h-[200px] md:min-h-[480px] transition-all hover:bg-slate-50/80 ${
+                      className={`bg-slate-50/50 border border-slate-200 rounded-2xl flex flex-col h-full min-h-0 transition-all hover:bg-slate-50/80 overflow-hidden ${
                         isVisibleOnMobile ? 'flex' : 'hidden md:flex'
                       }`}
                     >
@@ -343,7 +352,7 @@ export default function OrdersTab({
                     return (
                       <>
                         {/* Column Header */}
-                        <div className={`px-3 py-2.5 rounded-t-2xl border-b font-extrabold text-xs uppercase tracking-wider flex items-center justify-between ${col.headerClass}`}>
+                        <div className={`px-3 py-2.5 rounded-t-2xl border-b font-extrabold text-xs uppercase tracking-wider flex items-center justify-between shrink-0 ${col.headerClass}`}>
                           <span>{col.label}</span>
                           <span className="px-2 py-0.5 rounded-full text-[10px] bg-white border border-slate-200 text-slate-800 font-black shadow-xs">
                             {colOrders.length}
@@ -351,7 +360,7 @@ export default function OrdersTab({
                         </div>
 
                         {/* Cards container */}
-                        <div className="p-2 sm:p-2.5 space-y-2.5 max-h-[60vh] md:max-h-[75vh] overflow-y-auto">
+                        <div className="p-2 sm:p-2.5 space-y-2.5 flex-1 min-h-0 overflow-y-auto">
                           {colOrders.length === 0 ? (
                             <div className="text-center py-10 text-slate-400 font-bold text-xs">
                               No orders
@@ -411,7 +420,7 @@ export default function OrdersTab({
                                   <div className="min-w-0">
                                     <span className="font-extrabold text-slate-900 text-xs block leading-tight">{ord.orderNumber}</span>
                                     <span className="text-xs text-slate-600 font-semibold truncate block max-w-[130px]">
-                                      {ord.customerId?.name || ord.customerName || (typeof ord.customerId === 'object' && ord.customerId?.name) || 'Guest Diner'}
+                                      {ord.customerId?.name || ord.customerName || (typeof ord.customerId === 'object' && ord.customerId?.name) || 'Guest User'}
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg shrink-0 text-[10px] font-bold text-slate-700">
@@ -421,39 +430,32 @@ export default function OrdersTab({
                                 </div>
 
                                 {/* Row 3: Total + action buttons */}
-                                <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 gap-1">
-                                  <span className="font-black text-slate-900 text-sm">₹{ord.totalAmount}</span>
-                                  <div className="flex items-center gap-1">
+                                <div className="flex items-center justify-between border-t border-slate-100 pt-2.5 gap-2">
+                                  <span className="font-black text-slate-900 text-sm shrink-0">₹{ord.totalAmount}</span>
+                                  <div className="flex items-center gap-2">
                                     <button
                                       onClick={() => setSelectedViewOrder(ord)}
-                                      className="h-7 w-7 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                                      className="h-8 w-12 sm:w-9 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer transition-colors shrink-0 shadow-2xs"
                                       title="View Details"
                                     >
-                                      <Eye className="w-3.5 h-3.5 shrink-0" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setOrderToDelete(ord); }}
-                                      className="h-7 w-7 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                                      title="Delete Order"
-                                    >
-                                      <Trash2 className="w-3 h-3 shrink-0" />
+                                      <Eye className="w-4 h-4 shrink-0" />
                                     </button>
                                     {isNew && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus(ord._id, 'Accepted')}
-                                        className="h-7 px-2.5 bg-[#003b1b] hover:bg-[#166534] text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
+                                        className="h-8 px-6 sm:px-4 min-w-[115px] sm:min-w-[76px] bg-[#003b1b] hover:bg-[#166534] text-white font-extrabold rounded-xl cursor-pointer text-xs uppercase tracking-wide transition-colors shadow-xs shrink-0 flex items-center justify-center"
                                       >Accept</button>
                                     )}
                                     {(isAccepted || isPreparing) && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus(ord._id, 'Ready')}
-                                        className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
+                                        className="h-8 px-6 sm:px-4 min-w-[115px] sm:min-w-[76px] bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl cursor-pointer text-xs uppercase tracking-wide transition-colors shadow-xs shrink-0 flex items-center justify-center"
                                       >Ready</button>
                                     )}
                                     {ord.status === 'Ready' && (
                                       <button
                                         onClick={() => handleUpdateOrderStatus(ord._id, 'Served')}
-                                        className="h-7 px-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg cursor-pointer text-[10px] uppercase tracking-wide transition-colors shadow-xs"
+                                        className="h-8 px-6 sm:px-4 min-w-[115px] sm:min-w-[76px] bg-teal-600 hover:bg-teal-700 text-white font-extrabold rounded-xl cursor-pointer text-xs uppercase tracking-wide transition-colors shadow-xs shrink-0 flex items-center justify-center"
                                       >Serve</button>
                                     )}
                                   </div>
@@ -474,7 +476,7 @@ export default function OrdersTab({
       </div>
     ) : (
             /* Orders Table view (History View) */
-            <div className="space-y-4">
+            <div className="space-y-4 flex-1 min-h-0 overflow-y-auto">
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 {historyLoading ? (
                   <div className="text-center py-20">
@@ -524,7 +526,7 @@ export default function OrdersTab({
                                       <span className="text-[9px] text-slate-400 block mt-0.5">{ord.customerId?.mobile || ord.customerMobile || ''}</span>
                                     </div>
                                   ) : (
-                                    <span className="text-slate-400 font-bold">Guest Diner</span>
+                                    <span className="text-slate-400 font-bold">Guest User</span>
                                   )}
                                 </td>
                                 <td className="p-3 max-w-xs truncate text-[11px] text-slate-600 font-semibold" title={formatItemsSummary(ord.items)}>
@@ -539,26 +541,14 @@ export default function OrdersTab({
                                   </span>
                                 </td>
                                 <td className="p-3">
-                                  <div className="flex items-center justify-center gap-1.5">
+                                  <div className="flex items-center justify-center">
                                     {/* Open Details modal action */}
                                     <button 
                                       onClick={() => setSelectedViewOrder(ord)}
-                                      className="h-6 w-6 rounded-md border border-slate-200 hover:bg-slate-50 text-slate-500 flex items-center justify-center cursor-pointer shrink-0"
+                                      className="h-7 w-7 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                                       title="View Details"
                                     >
-                                      <Eye className="w-3 h-3 shrink-0" />
-                                    </button>
-
-                                    {/* Delete Order Icon Button */}
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setOrderToDelete(ord);
-                                      }}
-                                      className="h-6 w-6 rounded-md border border-red-100 hover:bg-red-50 text-red-500 flex items-center justify-center cursor-pointer shrink-0"
-                                      title="Delete Order"
-                                    >
-                                      <Trash2 className="w-2.5 h-2.5 shrink-0" />
+                                      <Eye className="w-3.5 h-3.5 shrink-0" />
                                     </button>
                                   </div>
                                 </td>
@@ -630,22 +620,9 @@ export default function OrdersTab({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <select
-                  value={selectedViewOrder.status}
-                  onChange={(e) => {
-                    const newStatus = e.target.value;
-                    handleUpdateOrderStatus(selectedViewOrder._id, newStatus);
-                    setSelectedViewOrder(prev => ({ ...prev, status: newStatus }));
-                  }}
-                  className={`px-2.5 py-1.5 rounded-xl text-[10px] font-black uppercase border cursor-pointer outline-none shadow-xs ${getStatusBadgeClass(selectedViewOrder.status)}`}
-                >
-                  <option value="New">New</option>
-                  <option value="Accepted">Accepted</option>
-                  <option value="Preparing">Preparing</option>
-                  <option value="Ready">Ready</option>
-                  <option value="Completed">Completed</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
+                <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase border shadow-xs ${getStatusBadgeClass(selectedViewOrder.status)}`}>
+                  {selectedViewOrder.status}
+                </span>
                 <button 
                   onClick={() => setSelectedViewOrder(null)} 
                   className="w-8 h-8 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex items-center justify-center cursor-pointer text-slate-500 transition-colors"
@@ -724,7 +701,7 @@ export default function OrdersTab({
                       <span className="block text-[11px] text-slate-500 font-bold mt-0.5">{selectedViewOrder.customerId?.mobile || selectedViewOrder.customerMobile || ''}</span>
                     </>
                   ) : (
-                    <span className="font-bold text-slate-500 text-xs">Guest Diner</span>
+                    <span className="font-bold text-slate-500 text-xs">Guest User</span>
                   )}
                   <div className="mt-2 flex items-center gap-1.5">
                     <span className="text-[10px] text-slate-500 font-bold">Priority:</span>
@@ -770,7 +747,7 @@ export default function OrdersTab({
                   {selectedViewOrder.status === 'New' && (
                     <div className="flex gap-2">
                       <button
-                        onClick={() => { handleUpdateOrderStatus(selectedViewOrder._id, 'Cancelled'); setSelectedViewOrder(null); }}
+                        onClick={() => handleRejectOrder(selectedViewOrder._id)}
                         className="flex-1 h-9 bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 font-extrabold rounded-xl cursor-pointer text-xs transition-colors"
                       >Reject</button>
                       <button

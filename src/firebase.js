@@ -27,21 +27,34 @@ export const requestFirebaseNotificationPermission = async (role = 'restaurant')
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
       console.log('Notification permission granted.');
-      // Use the Firebase worker explicitly. `serviceWorker.ready` may resolve
-      // to the app's PWA worker (which has a more specific scope) and leave
-      // FCM pushes without a worker that can receive them when the panel is closed.
+      const legacyScope = new URL(`${import.meta.env.BASE_URL}fcm/`, window.location.origin).href;
+      const legacyRegistration = await navigator.serviceWorker.getRegistration(legacyScope);
+      let legacyToken = null;
+      if (legacyRegistration?.scope === legacyScope) {
+        try {
+          legacyToken = await getToken(messaging, { serviceWorkerRegistration: legacyRegistration });
+        } catch (error) {
+          console.warn('Could not read the previous shared notification subscription:', error);
+        }
+      }
+
+      // Each panel owns a separate worker registration and FCM token. Muting
+      // Admin can therefore never mute Counter on the same browser.
       const registration = await navigator.serviceWorker.register(
         `${import.meta.env.BASE_URL}firebase-messaging-sw.js`,
-        { scope: `${import.meta.env.BASE_URL}fcm/` }
+        { scope: `${import.meta.env.BASE_URL}fcm/${role}/` }
       );
-      await navigator.serviceWorker.ready;
       const token = await getToken(messaging, {
         serviceWorkerRegistration: registration
       });
       
       if (token) {
         console.log('FCM Token retrieved:', token);
+        localStorage.setItem(`menuos_fcm_token_${role}`, token);
         await api.notifications.registerToken(token, role);
+        if (legacyToken && legacyToken !== token) {
+          await api.notifications.deregisterRole(legacyToken).catch(error => console.warn('Could not migrate previous notification subscription:', error));
+        }
         return token;
       }
     } else {
