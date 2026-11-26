@@ -84,9 +84,24 @@ const apiFetch = async (endpoint, options = {}, role = 'restaurant') => {
     }
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+  let data = null;
+  if (responseText) {
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      const looksLikeHtml = /^\s*</.test(responseText);
+      const message = looksLikeHtml
+        ? `Backend returned a webpage instead of JSON (HTTP ${response.status}). The API route may be missing from the live backend deployment.`
+        : `Backend returned an invalid response (HTTP ${response.status}).`;
+      const err = new Error(message);
+      err.status = response.status;
+      err.isNonJsonResponse = true;
+      throw err;
+    }
+  }
   if (!response.ok) {
-    const err = new Error(data.message || 'Something went wrong');
+    const err = new Error(data?.message || 'Something went wrong');
     err.status = response.status;
     throw err;
   }

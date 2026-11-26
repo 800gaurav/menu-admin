@@ -445,7 +445,7 @@ export default function RestaurantAdminDashboard() {
       try {
         await api.notifications.setPreference(token, nextEnabled);
       } catch (error) {
-        if (!nextEnabled && error.status === 404) return;
+        if (!nextEnabled && error.status === 404 && error.message === 'This device is not registered for this panel') return;
         setOrderNotificationsEnabled(!nextEnabled);
         orderNotificationsEnabledRef.current = !nextEnabled;
         localStorage.setItem('admin_order_push_enabled', String(!nextEnabled));
